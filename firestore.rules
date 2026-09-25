@@ -1,0 +1,278 @@
+rules_version = '2';
+
+// 九愛！買 Firestore 安全規則
+// 部署前必改：把下方 adminUid() 的內容換成管理員帳號的 UID
+// 發布方式：Firebase 主控台 > Firestore Database > 規則 > 貼上全部內容 > 發布
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===== 身分 =====
+    function adminUid() { return 'faA2Ez0SF4Ue84HdflQXy8qQhxK2'; }
+
+    function signedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function isAdmin() { return signedIn() && request.auth.uid == adminUid(); }
+
+    function path(coll, id) { return /databases/$(database)/documents/$(coll)/$(id); }
+    function userPath() { return path('users', request.auth.uid); }
+
+    // 員工資料存在 users/{uid}，停用的帳號沒有任何權限
+    function hasRole(roles) {
+      return signedIn()
+        && exists(userPath())
+        && get(userPath()).data.disabled == false
+        && get(userPath()).data.role in roles;
+    }
+    function isStaff() { return isAdmin() || hasRole(['staff', 'manager']); }
+    function isManager() { return isAdmin() || hasRole(['manager']); }
+
+    // ===== 共用 =====
+    function onlyChanged(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+    function finalStatus(o) {
+      return o.status in ['picked', 'rejected', 'cancelled'] || o.get('deleted', false) == true;
+    }
+    // 編號格式：A001、B012、A123
+    function fmtNo(prefix, seq) {
+      return seq < 10 ? prefix + '00' + string(seq)
+        : (seq < 100 ? prefix + '0' + string(seq) : prefix + string(seq));
+    }
+
+    // 顧客送出的明細：最多 10 行，每行只有 itemId、qty、option
+    function lineOk(items, i) {
+      return items.size() <= i || (
+        items[i] is map
+        && items[i].keys().hasOnly(['itemId', 'qty', 'option'])
+        && items[i].itemId is string && items[i].itemId.size() > 0 && items[i].itemId.size() <= 64
+        && items[i].qty is int && items[i].qty >= 1 && items[i].qty <= 50
+        && (!('option' in items[i]) || items[i].option == null
+            || (items[i].option is string && items[i].option.size() <= 30))
+      );
+    }
+    function linesOk(items) {
+      return items is list && items.size() >= 1 && items.size() <= 10
+        && lineOk(items, 0) && lineOk(items, 1) && lineOk(items, 2) && lineOk(items, 3)
+        && lineOk(items, 4) && lineOk(items, 5) && lineOk(items, 6) && lineOk(items, 7)
+        && lineOk(items, 8) && lineOk(items, 9);
+    }
+    function qtyAt(items, i) { return items.size() > i ? items[i].qty : 0; }
+    function sumQty(items) {
+      return qtyAt(items, 0) + qtyAt(items, 1) + qtyAt(items, 2) + qtyAt(items, 3) + qtyAt(items, 4)
+        + qtyAt(items, 5) + qtyAt(items, 6) + qtyAt(items, 7) + qtyAt(items, 8) + qtyAt(items, 9);
+    }
+
+    // ===== 營業設定：所有人可讀；攤位主管可改；店員只能切換「接受預點」 =====
+    match /settings/{docId} {
+      allow read: if true;
+      allow create: if isManager();
+      allow update: if isManager()
+        || (isStaff() && onlyChanged(['acceptingPreorders', 'updatedAt'])
+            && request.resource.data.acceptingPreorders is bool);
+      allow delete: if isAdmin();
+    }
+
+    // ===== 品項：所有人可讀；攤位主管可改；店員接單時只能更新售出數量 =====
+    match /items/{itemId} {
+      allow read: if true;
+      allow create, delete: if isManager();
+      allow update: if isManager()
+        || (isStaff() && onlyChanged(['soldCount', 'soldOut', 'updatedAt']));
+    }
+
+    match /itemImages/{itemId} {
+      allow read: if true;
+      allow write: if isManager();
+    }
+
+    // ===== 員工帳號資料：只有管理員能寫(實際由 Apps Script 以服務帳戶寫入) =====
+    match /users/{userId} {
+      allow get: if signedIn() && (uid() == userId || isAdmin());
+      allow list: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ===== 訂單編號計數器 =====
+    function prevCounter() { return resource == null ? 0 : resource.data.value; }
+    function counterOk(type) {
+      let d = request.resource.data;
+      let o = getAfter(path('orders', d.lastOrderId)).data;
+      return d.keys().hasOnly(['value', 'lastOrderId'])
+        && d.value == prevCounter() + 1
+        && o.seq == d.value
+        && ((type == 'A' && o.type == 'preorder' && o.uid == uid())
+            || (type == 'B' && o.type == 'walkin' && isStaff()));
+    }
+    match /counters/{type} {
+      allow get: if signedIn();
+      allow list: if isStaff();
+      allow create, update: if isAdmin() || (signedIn() && counterOk(type));
+      allow delete: if isAdmin();
+    }
+
+    // ===== 一次性點餐連結 =====
+    function freshSession() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['token', 'used', 'orderId', 'updatedAt'])
+        && d.used == false && d.orderId == null
+        && d.token is string && d.token.size() >= 16 && d.token.size() <= 64;
+    }
+    match /sessions/{userId} {
+      allow get: if signedIn() && uid() == userId;
+      allow create: if signedIn() && uid() == userId && freshSession();
+      allow update: if signedIn() && uid() == userId && (
+        // 重新掃描 QR code：上一張訂單結束後才能產生新連結
+        (freshSession() && (resource.data.used == false
+          || finalStatus(get(path('orders', resource.data.orderId)).data)))
+        // 送出訂單時把連結標記為已使用
+        || (resource.data.used == false && request.resource.data.used == true
+          && request.resource.data.keys().hasOnly(['token', 'used', 'orderId', 'updatedAt'])
+          && request.resource.data.token == resource.data.token
+          && getAfter(path('orders', request.resource.data.orderId)).data.uid == userId)
+      );
+    }
+
+    // ===== 訂單 =====
+    function preorderChecks(orderId) {
+      let d = request.resource.data;
+      let s = get(path('sessions', uid())).data;
+      let sAfter = getAfter(path('sessions', uid())).data;
+      let c = getAfter(path('counters', 'A')).data;
+      let settings = get(path('settings', 'app')).data;
+      return d.keys().hasOnly(['type', 'seq', 'no', 'status', 'uid', 'items', 'itemCount', 'surname',
+                               'pushEnabled', 'createdAt', 'updatedAt'])
+        && d.uid == uid() && d.status == 'pending' && d.pushEnabled == false
+        && d.surname is string && d.surname.size() >= 1 && d.surname.size() <= 10
+        && linesOk(d.items) && d.itemCount == sumQty(d.items) && d.itemCount >= 1
+        && settings.acceptingPreorders == true
+        && d.itemCount <= settings.maxItemsPerOrder
+        && d.createdAt == request.time && d.updatedAt == request.time
+        && d.seq is int && c.value == d.seq && c.lastOrderId == orderId
+        && d.no == fmtNo('A', d.seq)
+        && s.used == false && sAfter.used == true && sAfter.orderId == orderId
+        && existsAfter(path('contacts', orderId));
+    }
+    function walkinChecks(orderId) {
+      let d = request.resource.data;
+      let c = getAfter(path('counters', 'B')).data;
+      return d.seq is int && c.value == d.seq && c.lastOrderId == orderId
+        && d.no == fmtNo('B', d.seq)
+        && d.createdAt == request.time && d.updatedAt == request.time;
+    }
+    function staffUpdateOk() {
+      let d = request.resource.data;
+      let o = resource.data;
+      return isStaff()
+        && d.type == o.type && d.seq == o.seq && d.no == o.no
+        && d.get('uid', null) == o.get('uid', null)
+        && d.get('deleted', false) == o.get('deleted', false)
+        && d.status in ['pending', 'accepted', 'ready', 'picked', 'rejected', 'cancelled']
+        && d.updatedAt == request.time;
+    }
+    function customerUpdateOk() {
+      let d = request.resource.data;
+      let o = resource.data;
+      return signedIn() && d.updatedAt == request.time && (
+        // 本人在攤位接單前取消
+        (o.get('uid', null) == uid() && o.status == 'pending' && d.status == 'cancelled'
+          && d.cancelledAt == request.time && onlyChanged(['status', 'cancelledAt', 'updatedAt']))
+        // 開啟推播(持有訂單連結者即可，iPhone 主畫面 App 與 Safari 身分不同)
+        || (onlyChanged(['pushEnabled', 'updatedAt']) && d.pushEnabled == true)
+        // 掃描現場取餐 QR code 認領訂單
+        || (o.type == 'walkin' && o.get('claimedBy', null) == null && d.claimedBy == uid()
+          && onlyChanged(['claimedBy', 'updatedAt']))
+      );
+    }
+    match /orders/{orderId} {
+      // 訂單 ID 是隨機長字串，持有連結者才能讀取單筆；查詢清單只限員工
+      allow get: if signedIn();
+      allow list: if isStaff();
+      allow create: if signedIn() && (
+        (request.resource.data.type == 'preorder' && preorderChecks(orderId))
+        || (request.resource.data.type == 'walkin' && isStaff() && walkinChecks(orderId))
+        || (request.resource.data.type == 'manual' && isAdmin())
+      );
+      allow update: if isAdmin() || staffUpdateOk() || customerUpdateOk();
+      allow delete: if isAdmin();
+    }
+
+    // ===== 聯絡資料(電話)：只有員工與下單本人能讀 =====
+    function contactPreorderOk(orderId) {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['orderId', 'surname', 'phone', 'consentNotify', 'consentText', 'consentAt', 'createdAt'])
+        && d.orderId == orderId
+        && d.phone is string && d.phone.matches('^09[0-9]{8}$')
+        && d.surname is string && d.surname.size() >= 1 && d.surname.size() <= 10
+        && d.consentNotify == true && d.consentText is string && d.consentText.size() <= 500
+        && d.consentAt == request.time && d.createdAt == request.time
+        && getAfter(path('orders', orderId)).data.uid == uid()
+        && getAfter(path('activePhones', d.phone)).data.orderId == orderId;
+    }
+    match /contacts/{orderId} {
+      allow get: if isStaff() || (signedIn() && get(path('orders', orderId)).data.get('uid', null) == uid());
+      allow list: if isStaff();
+      allow create: if signedIn() && (
+        contactPreorderOk(orderId)
+        || (isStaff() && getAfter(path('orders', orderId)).data.type == 'walkin')
+      );
+      allow update, delete: if isAdmin();
+    }
+
+    // ===== 每支電話同時只能有一張進行中的預點 =====
+    function phoneLockOk(phone) {
+      let d = request.resource.data;
+      return signedIn()
+        && d.keys().hasOnly(['uid', 'orderId', 'updatedAt'])
+        && d.uid == uid() && d.updatedAt == request.time
+        && getAfter(path('orders', d.orderId)).data.uid == uid()
+        && getAfter(path('contacts', d.orderId)).data.phone == phone;
+    }
+    match /activePhones/{phone} {
+      allow read: if isStaff();
+      allow create: if phoneLockOk(phone);
+      // 上一張訂單已結束，才能被新訂單覆蓋
+      allow update: if phoneLockOk(phone) && finalStatus(get(path('orders', resource.data.orderId)).data);
+      allow delete: if isAdmin();
+    }
+
+    // ===== 找回訂單：文件 ID 為「編號_電話」 =====
+    match /lookups/{key} {
+      allow get: if signedIn();
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasOnly(['orderId', 'createdAt'])
+        && request.resource.data.createdAt == request.time
+        && (getAfter(path('orders', request.resource.data.orderId)).data.get('uid', null) == uid() || isStaff());
+      allow delete: if isAdmin();
+    }
+
+    // ===== 推播 token：只寫不讀，由 Apps Script 以服務帳戶讀取 =====
+    match /pushTokens/{orderId} {
+      allow read: if false;
+      allow create, update: if signedIn()
+        && exists(path('orders', orderId))
+        && request.resource.data.keys().hasOnly(['token', 'updatedAt'])
+        && request.resource.data.token is string && request.resource.data.token.size() < 4096
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isAdmin();
+    }
+
+    // ===== 收件匣：超量預點通知 =====
+    function inboxOk() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['type', 'surname', 'phone', 'summary', 'count', 'attempts', 'read', 'readAt', 'lastAt'])
+        && d.type == 'over-limit' && d.count is int && d.attempts is int && d.read == false
+        && d.lastAt == request.time
+        && d.summary is string && d.summary.size() <= 300
+        && d.surname is string && d.surname.size() <= 10
+        && d.phone is string && d.phone.size() <= 12;
+    }
+    match /inbox/{userId} {
+      allow read: if isStaff();
+      allow create: if signedIn() && uid() == userId && inboxOk();
+      allow update: if (signedIn() && uid() == userId && inboxOk())
+        || (isStaff() && onlyChanged(['read', 'readAt']));
+      allow delete: if isAdmin();
+    }
+  }
+}

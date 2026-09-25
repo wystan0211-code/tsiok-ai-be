@@ -1,0 +1,9 @@
+# 系統與編輯器檔案
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# 機密檔案：服務帳戶金鑰絕對不能上傳
+*service-account*.json
+*-firebase-adminsdk-*.json

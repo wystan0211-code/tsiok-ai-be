@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#fffff8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="九愛！買">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="assets/brand/favicon-64.png">
+<link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/components.css">
+<meta name="robots" content="noindex">
+<title>九愛！買｜攤位營運</title>
+<script type="module" src="js/pages/stall.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar__inner">
+      <img class="topbar__logo" src="assets/brand/logo-horizontal.png" alt="九愛！買" width="640" height="260">
+      <span class="topbar__title">營運</span>
+      <span class="topbar__spacer"></span>
+      <label class="switch text-sm">
+        <input id="accepting" type="checkbox">
+        <span>接受預點</span>
+      </label>
+      <a class="btn btn--ghost btn--icon" href="display.html" target="_blank" rel="noopener" aria-label="開啟叫號畫面" title="叫號畫面">
+        <span class="material-symbols-rounded icon" aria-hidden="true">tv</span>
+      </a>
+      <a id="admin-link" class="btn btn--ghost btn--icon" href="admin.html" aria-label="管理後台" title="管理後台" hidden>
+        <span class="material-symbols-rounded icon" aria-hidden="true">settings</span>
+      </a>
+      <button id="logout" class="btn btn--ghost btn--icon" type="button" aria-label="登出" title="登出">
+        <span class="material-symbols-rounded icon" aria-hidden="true">logout</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="page page--wide stack">
+    <div id="sound-hint" class="banner" hidden>
+      <span class="material-symbols-rounded icon" aria-hidden="true">volume_up</span>
+      <p>點一下畫面任何地方，開啟新訂單提示音。</p>
+    </div>
+    <p id="who" class="muted text-sm"></p>
+
+    <nav class="tabs" role="tablist" aria-label="營運功能">
+      <button class="tab" role="tab" data-tab="board" aria-selected="true">
+        <span class="material-symbols-rounded icon" aria-hidden="true">view_kanban</span>看板
+        <span id="pending-count" class="count-dot" hidden></span>
+      </button>
+      <button class="tab" role="tab" data-tab="pos" aria-selected="false">
+        <span class="material-symbols-rounded icon" aria-hidden="true">point_of_sale</span>現場點餐
+      </button>
+      <button class="tab" role="tab" data-tab="inbox" aria-selected="false">
+        <span class="material-symbols-rounded icon" aria-hidden="true">inbox</span>收件匣
+        <span id="inbox-count" class="count-dot" hidden></span>
+      </button>
+      <button class="tab" role="tab" data-tab="pickup" aria-selected="false">
+        <span class="material-symbols-rounded icon" aria-hidden="true">search</span>取餐核對
+      </button>
+    </nav>
+
+    <!-- 看板 -->
+    <section id="panel-board" role="tabpanel" class="stack">
+      <div class="segmented board__mobile-switch" role="group" aria-label="切換欄位">
+        <button type="button" data-col="pending" aria-pressed="true">新訂單 <span data-count="pending"></span></button>
+        <button type="button" data-col="accepted" aria-pressed="false">製作中 <span data-count="accepted"></span></button>
+        <button type="button" data-col="ready" aria-pressed="false">可取餐 <span data-count="ready"></span></button>
+        <button type="button" data-col="done" aria-pressed="false">已結束 <span data-count="done"></span></button>
+      </div>
+      <div class="board">
+        <div class="board__col is-shown" data-colbox="pending">
+          <h2 class="board__head">新訂單 <span class="count-dot" data-count="pending"></span></h2>
+          <div class="stack" data-list="pending"></div>
+        </div>
+        <div class="board__col" data-colbox="accepted">
+          <h2 class="board__head">製作中 <span class="count-dot" data-count="accepted"></span></h2>
+          <div class="stack" data-list="accepted"></div>
+        </div>
+        <div class="board__col" data-colbox="ready">
+          <h2 class="board__head">可取餐 <span class="count-dot" data-count="ready"></span></h2>
+          <div class="stack" data-list="ready"></div>
+        </div>
+        <div class="board__col" data-colbox="done">
+          <h2 class="board__head">今日已結束 <span class="count-dot" data-count="done"></span></h2>
+          <div class="stack" data-list="done"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 現場點餐 -->
+    <section id="panel-pos" role="tabpanel" hidden>
+      <div class="pos">
+        <div id="pos-grid" class="pos-grid"></div>
+        <form id="pos-form" class="card stack" novalidate>
+          <h2 class="section-title">現場訂單</h2>
+          <div id="pos-lines"></div>
+          <div class="summary-row summary-row--total"><span>合計</span><span id="pos-total">NT$ 0</span></div>
+          <div class="segmented" role="group" aria-label="取餐方式">
+            <button type="button" data-mode="now" aria-pressed="true">立即取餐</button>
+            <button type="button" data-mode="later" aria-pressed="false">稍後取餐</button>
+          </div>
+          <p id="pos-mode-hint" class="muted text-sm"></p>
+          <fieldset class="field" style="border:none;padding:0;margin:0">
+            <legend class="field__label">付款方式</legend>
+            <div id="pos-payment" class="radio-group"></div>
+          </fieldset>
+          <div id="pos-later-fields" class="stack" hidden>
+            <label class="field">
+              <span class="field__label">姓氏(選填)</span>
+              <input class="input" name="surname" maxlength="10">
+            </label>
+            <label class="field">
+              <span class="field__label">手機號碼(選填，可用簡訊通知)</span>
+              <input class="input" name="phone" type="tel" inputmode="numeric" maxlength="12" placeholder="09xxxxxxxx">
+            </label>
+          </div>
+          <p id="pos-error" class="banner banner--danger" hidden></p>
+          <div class="row">
+            <button id="pos-clear" class="btn btn--ghost" type="button">清空</button>
+            <button id="pos-submit" class="btn btn--primary btn--lg" type="submit" style="flex:1">
+              <span class="material-symbols-rounded icon" aria-hidden="true">payments</span>
+              <span id="pos-submit-text">結帳記帳</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- 收件匣 -->
+    <section id="panel-inbox" role="tabpanel" class="stack" hidden>
+      <p class="muted text-sm">顧客預點超過單筆上限時，系統會自動拒絕並在這裡通知。顧客可能會直接到攤位點餐。</p>
+      <div id="inbox-list" class="stack"></div>
+    </section>
+
+    <!-- 取餐核對 -->
+    <section id="panel-pickup" role="tabpanel" class="stack" hidden>
+      <div class="card stack">
+        <div class="segmented" role="group" aria-label="查詢方式">
+          <button type="button" data-find="no" aria-pressed="true">訂單編號</button>
+          <button type="button" data-find="phone" aria-pressed="false">電話末三碼</button>
+        </div>
+        <input id="pickup-q" class="input" inputmode="text" placeholder="輸入 A012、12 或電話末三碼" aria-label="查詢">
+      </div>
+      <div id="pickup-results" class="stack"></div>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#fffff8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="九愛！買">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="assets/brand/favicon-64.png">
+<link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/components.css">
+<meta name="robots" content="noindex">
+<title>九愛！買｜管理後台</title>
+<script type="module" src="js/pages/admin.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar__inner">
+      <img class="topbar__logo" src="assets/brand/logo-horizontal.png" alt="九愛！買" width="640" height="260">
+      <span class="topbar__title">後台</span>
+      <span class="topbar__spacer"></span>
+      <a class="btn btn--ghost btn--icon" href="stall.html" aria-label="回到營運頁" title="營運頁">
+        <span class="material-symbols-rounded icon" aria-hidden="true">storefront</span>
+      </a>
+      <button id="logout" class="btn btn--ghost btn--icon" type="button" aria-label="登出" title="登出">
+        <span class="material-symbols-rounded icon" aria-hidden="true">logout</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="page page--wide stack">
+    <p id="who" class="muted text-sm"></p>
+    <nav class="tabs" role="tablist" aria-label="後台功能">
+      <button class="tab" role="tab" data-tab="items" aria-selected="true">
+        <span class="material-symbols-rounded icon" aria-hidden="true">restaurant_menu</span>品項
+      </button>
+      <button class="tab" role="tab" data-tab="settings" aria-selected="false">
+        <span class="material-symbols-rounded icon" aria-hidden="true">tune</span>營業設定
+      </button>
+      <button class="tab" role="tab" data-tab="finance" aria-selected="false">
+        <span class="material-symbols-rounded icon" aria-hidden="true">receipt_long</span>收支
+      </button>
+      <button class="tab" role="tab" data-tab="accounts" aria-selected="false" data-admin hidden>
+        <span class="material-symbols-rounded icon" aria-hidden="true">group</span>帳號
+      </button>
+      <button class="tab" role="tab" data-tab="system" aria-selected="false" data-admin hidden>
+        <span class="material-symbols-rounded icon" aria-hidden="true">settings</span>系統
+      </button>
+    </nav>
+
+    <!-- 品項 -->
+    <section id="panel-items" role="tabpanel" class="stack">
+      <div class="row row--between">
+        <p class="muted text-sm">價格與庫存變更會立即顯示在點餐頁。</p>
+        <button id="item-add" class="btn btn--primary" type="button">
+          <span class="material-symbols-rounded icon" aria-hidden="true">add</span>新增品項
+        </button>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>圖片</th><th>品項</th><th class="num">價格</th><th class="num">已售 / 上限</th><th>狀態</th><th>排序</th><th>操作</th></tr></thead>
+          <tbody id="item-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 營業設定 -->
+    <section id="panel-settings" role="tabpanel" hidden>
+      <form id="settings-form" class="card stack" style="max-width:720px">
+        <h2 class="section-title">公告橫幅</h2>
+        <label class="switch"><input type="checkbox" name="bannerActive"><span>顯示公告</span></label>
+        <label class="field"><span class="field__label">公告內容</span>
+          <input class="input" name="bannerText" maxlength="80" placeholder="例如：雞蛋糕 14:00 前暫停供應"></label>
+
+        <h2 class="section-title">預點</h2>
+        <label class="switch"><input type="checkbox" name="acceptingPreorders"><span>接受預點</span></label>
+        <label class="field"><span class="field__label">單筆預點數量上限(件)</span>
+          <input class="input" name="maxItemsPerOrder" type="number" min="1" max="50" required>
+          <span class="field__hint">超過上限的預點會自動拒絕，並通知收件匣</span></label>
+        <label class="field"><span class="field__label">可取餐多久未取算逾時(分鐘)</span>
+          <input class="input" name="pickupReminderMinutes" type="number" min="1" max="180" required></label>
+        <label class="field"><span class="field__label">付款方式(用頓號、分隔)</span>
+          <input class="input" name="paymentMethods" required></label>
+
+        <h2 class="section-title">通知</h2>
+        <label class="field"><span class="field__label">常用訊息(一行一則)</span>
+          <textarea class="textarea" name="messageTemplates"></textarea></label>
+        <label class="field"><span class="field__label">簡訊範本</span>
+          <textarea class="textarea" name="smsTemplate" maxlength="200"></textarea>
+          <span class="field__hint">{no} 會換成訂單編號，{surname} 會換成姓氏</span></label>
+        <label class="field"><span class="field__label">個資同意文字(顧客送出前必須勾選)</span>
+          <textarea class="textarea" name="consentText" maxlength="300" required></textarea></label>
+
+        <p id="settings-note" class="muted text-sm"></p>
+        <button class="btn btn--primary" type="submit">
+          <span class="material-symbols-rounded icon" aria-hidden="true">save</span>儲存設定
+        </button>
+      </form>
+    </section>
+
+    <!-- 收支 -->
+    <section id="panel-finance" role="tabpanel" class="stack" hidden>
+      <form id="finance-form" class="card row">
+        <label class="field"><span class="field__label">開始日期</span><input class="input" type="date" name="from" required></label>
+        <label class="field"><span class="field__label">結束日期</span><input class="input" type="date" name="to" required></label>
+        <button class="btn btn--primary" type="submit" style="align-self:flex-end">
+          <span class="material-symbols-rounded icon" aria-hidden="true">search</span>查詢
+        </button>
+        <button id="finance-export" class="btn" type="button" style="align-self:flex-end">
+          <span class="material-symbols-rounded icon" aria-hidden="true">download</span>匯出 CSV
+        </button>
+        <button id="finance-add" class="btn" type="button" style="align-self:flex-end" data-admin hidden>
+          <span class="material-symbols-rounded icon" aria-hidden="true">add</span>新增收支
+        </button>
+      </form>
+      <div id="finance-stats" class="stat-grid"></div>
+      <div id="finance-breakdown" class="stack"></div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>編號</th><th>類型</th><th>狀態</th><th>確立時間</th><th>姓氏</th><th>品項</th><th class="num">金額</th><th>付款</th><th data-admin hidden>操作</th></tr></thead>
+          <tbody id="finance-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 帳號 -->
+    <section id="panel-accounts" role="tabpanel" class="stack" hidden>
+      <div class="row row--between">
+        <p class="muted text-sm">店員：營運與現場點餐。攤位主管：另可管理品項、營業設定、檢視收支。管理員：全部權限。</p>
+        <button id="account-add" class="btn btn--primary" type="button">
+          <span class="material-symbols-rounded icon" aria-hidden="true">person_add</span>新增帳號
+        </button>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>帳號</th><th>顯示名稱</th><th>權限</th><th>狀態</th><th>操作</th></tr></thead>
+          <tbody id="account-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 系統 -->
+    <section id="panel-system" role="tabpanel" class="stack" hidden>
+      <div class="card stack">
+        <h2 class="section-title">點餐 QR code</h2>
+        <p class="muted text-sm">印出來貼在攤位，顧客掃描後進入入口頁。網址會依目前網站位置自動產生。</p>
+        <div id="entry-qr" class="qr-box"></div>
+        <p id="entry-url" class="text-sm" style="text-align:center;word-break:break-all"></p>
+        <div><button id="print-qr" class="btn" type="button">
+          <span class="material-symbols-rounded icon" aria-hidden="true">print</span>列印 QR code</button></div>
+      </div>
+      <div class="card stack">
+        <h2 class="section-title">訂單編號</h2>
+        <p class="muted text-sm">把預點(A)與現場(B)的編號從 001 重新開始，適合在新的一天營業前使用。已存在的訂單不受影響。</p>
+        <div><button id="reset-counters" class="btn btn--danger" type="button">
+          <span class="material-symbols-rounded icon" aria-hidden="true">restart_alt</span>編號歸零</button></div>
+      </div>
+      <div id="demo-reset-box" class="card stack" hidden>
+        <h2 class="section-title">展示資料</h2>
+        <p class="muted text-sm">清除這個瀏覽器中所有展示模式的訂單與設定，恢復成初始狀態。</p>
+        <div><button id="demo-reset" class="btn btn--danger" type="button">
+          <span class="material-symbols-rounded icon" aria-hidden="true">delete</span>重設展示資料</button></div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

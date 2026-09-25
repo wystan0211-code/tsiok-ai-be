@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#fffff8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="九愛！買">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="assets/brand/favicon-64.png">
+<link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/components.css">
+<title>九愛！買｜點餐</title>
+<script type="module" src="js/pages/order.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a id="back-menu" class="btn btn--ghost btn--icon" href="#" aria-label="返回菜單" hidden>
+        <span class="material-symbols-rounded icon" aria-hidden="true">arrow_back</span>
+      </a>
+      <img class="topbar__logo" src="assets/brand/logo-horizontal.png" alt="九愛！買" width="640" height="260">
+      <span class="topbar__spacer"></span>
+      <span id="view-title" class="topbar__title">菜單</span>
+    </div>
+  </header>
+
+  <main class="page stack">
+    <div id="banner" class="banner" hidden></div>
+    <section id="state-loading" class="empty">載入中</section>
+
+    <section id="state-invalid" class="card stack" hidden>
+      <div class="banner banner--danger">
+        <span class="material-symbols-rounded icon" aria-hidden="true">link_off</span>
+        <p id="invalid-text">點餐連結已失效，請重新掃描攤位的 QR code。</p>
+      </div>
+      <a id="invalid-action" class="btn btn--primary btn--block" href="index.html">回到入口</a>
+    </section>
+
+    <section id="state-closed" class="card" hidden>
+      <div class="banner banner--danger">
+        <span class="material-symbols-rounded icon" aria-hidden="true">block</span>
+        <p>攤位目前暫停接受預點，請直接到攤位點餐。</p>
+      </div>
+    </section>
+
+    <section id="view-menu" hidden>
+      <div id="menu-list" class="menu-list"></div>
+    </section>
+
+    <section id="view-checkout" class="stack" hidden>
+      <div class="card">
+        <h2 class="section-title">確認訂單</h2>
+        <div id="cart-lines"></div>
+        <div class="stack" style="margin-top:var(--space-3)">
+          <div class="summary-row"><span>數量</span><span id="cart-count"></span></div>
+          <div class="summary-row summary-row--total"><span>金額</span><span id="cart-total"></span></div>
+          <p class="muted text-sm">現場以園遊券付款，實際金額以攤位接單時的價格為準。</p>
+          <div id="limit-warning" class="banner banner--danger" hidden></div>
+        </div>
+      </div>
+
+      <form id="checkout-form" class="card stack" novalidate>
+        <h2 class="section-title">取餐聯絡資料</h2>
+        <label class="field">
+          <span class="field__label">姓氏</span>
+          <input class="input" name="surname" maxlength="10" autocomplete="family-name" required placeholder="例如：王">
+        </label>
+        <label class="field">
+          <span class="field__label">手機號碼</span>
+          <input class="input" name="phone" type="tel" inputmode="numeric" maxlength="12" autocomplete="tel" required placeholder="09xxxxxxxx">
+          <span class="field__hint">餐點完成時用來通知你取餐</span>
+        </label>
+        <label class="check">
+          <input type="checkbox" name="consent" required>
+          <span id="consent-text"></span>
+        </label>
+        <p id="form-error" class="banner banner--danger" hidden></p>
+        <button id="submit-btn" class="btn btn--primary btn--lg btn--block" type="submit">
+          <span class="material-symbols-rounded icon" aria-hidden="true">send</span>
+          送出訂單
+        </button>
+      </form>
+    </section>
+  </main>
+
+  <div id="cart-bar" class="cart-bar" hidden>
+    <div class="cart-bar__inner">
+      <a class="btn btn--primary btn--lg btn--block" href="#checkout">
+        <span class="material-symbols-rounded icon" aria-hidden="true">shopping_bag</span>
+        <span id="cart-bar-text">查看訂單</span>
+      </a>
+    </div>
+  </div>
+</body>
+</html>
