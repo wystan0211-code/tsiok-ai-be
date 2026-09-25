@@ -1,0 +1,63 @@
+/* 設計變數：顏色、字體、間距、圓角。所有顏色已通過 WCAG 對比度檢查 */
+:root {
+  /* 顏色 */
+  --color-bg: #fffff8;              /* 全站背景 */
+  --color-surface: #ffffff;         /* 卡片底色 */
+  --color-primary: #ffc01a;         /* 品牌黃：按鈕、選取、進度條(只當色塊，上面的字用 --color-text，11.97:1) */
+  --color-primary-hover: #f2b200;   /* 按鈕按下與滑過(10.42:1) */
+  --color-primary-soft: #fff1c4;    /* 淡黃底：橫幅、提示區塊(17.41:1) */
+  --color-text: #100b00;            /* 主要文字(對背景 19.55:1) */
+  --color-text-muted: #5c5646;      /* 次要文字(7.27:1) */
+  --color-control-border: #8a8472;  /* 輸入框、按鈕外框(3.72:1，符合元件 3:1) */
+  --color-divider: #e6e2cc;         /* 裝飾分隔線 */
+  --color-success: #1e7a3c;         /* 成功文字(5.36:1) */
+  --color-success-soft: #e8f3ea;
+  --color-danger: #b3261e;          /* 錯誤文字(6.51:1) */
+  --color-danger-soft: #fbe9e7;
+  --color-warning: #7a5a00;         /* 提醒文字(6.36:1) */
+  --color-icon: #100b00;            /* 圖標跟隨文字色 */
+  --color-focus: #100b00;
+
+  /* 字體：英文與數字使用 Google Sans，中文自動改用思源黑體(Noto Sans TC) */
+  --font-sans: 'Google Sans', 'Noto Sans TC', system-ui, -apple-system, 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+  --weight-light: 300;
+  --weight-regular: 400;
+  --weight-semibold: 600;
+  --weight-display: 700;            /* 重點大字(訂單編號、叫號)，Google Sans 最粗為 700 */
+
+  /* 字級 */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --text-display: clamp(2.5rem, 12vw, 4rem);
+
+  /* 間距 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* 圓角：一般元件 8px、大卡片 12px */
+  --radius: 8px;
+  --radius-lg: 12px;
+
+  /* 陰影：只用在浮層 */
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+
+  /* 圖標(Material Symbols Rounded，不填滿，粗細 400) */
+  --icon-fill: 0;
+  --icon-weight: 400;
+  --icon-grade: 0;
+  --icon-size: 24;
+
+  /* 版面 */
+  --content-max: 720px;
+  --wide-max: 1280px;
+  --tap-min: 44px;
+}
