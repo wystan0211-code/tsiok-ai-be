@@ -113,18 +113,20 @@
             <div id="pos-payment" class="radio-group"></div>
           </fieldset>
           <div id="pos-later-fields" class="stack" hidden>
-            <label class="field">
-              <span class="field__label">姓氏</span>
-              <input class="input" name="surname" maxlength="10">
-            </label>
-            <fieldset class="field" style="border:none;padding:0;margin:0">
-              <legend class="field__label">稱謂</legend>
-              <div class="radio-group">
+            <div class="name-row">
+              <label class="field">
+                <span class="field__label">姓氏</span>
+                <input class="input input--surname" name="surname" maxlength="10">
+              </label>
+              <fieldset class="name-row__title">
+                <legend class="visually-hidden">稱謂</legend>
+                <div class="radio-group">
                 <label class="radio-chip"><input type="radio" name="title" value="先生"><span>先生</span></label>
                 <label class="radio-chip"><input type="radio" name="title" value="小姐"><span>小姐</span></label>
                 <label class="radio-chip"><input type="radio" name="title" value="其他"><span>其他</span></label>
-              </div>
-            </fieldset>
+                </div>
+              </fieldset>
+            </div>
             <label class="field">
               <span class="field__label">手機號碼(選填，可用簡訊通知)</span>
               <input class="input" name="phone" type="tel" inputmode="numeric" maxlength="12" placeholder="09xxxxxxxx">

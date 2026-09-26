@@ -72,18 +72,20 @@
 
       <form id="checkout-form" class="card stack" novalidate>
         <h2 class="section-title">取餐聯絡資料</h2>
-        <label class="field">
-          <span class="field__label">姓氏</span>
-          <input class="input" name="surname" maxlength="10" autocomplete="family-name" required placeholder="例如：王">
-        </label>
-        <fieldset class="field" style="border:none;padding:0;margin:0">
-          <legend class="field__label">稱謂</legend>
-          <div class="radio-group">
+        <div class="name-row">
+          <label class="field">
+            <span class="field__label">姓氏</span>
+            <input class="input input--surname" name="surname" maxlength="10" autocomplete="family-name" required placeholder="王">
+          </label>
+          <fieldset class="name-row__title">
+            <legend class="visually-hidden">稱謂</legend>
+            <div class="radio-group">
             <label class="radio-chip"><input type="radio" name="title" value="先生" required><span>先生</span></label>
             <label class="radio-chip"><input type="radio" name="title" value="小姐"><span>小姐</span></label>
             <label class="radio-chip"><input type="radio" name="title" value="其他"><span>其他</span></label>
-          </div>
-        </fieldset>
+            </div>
+          </fieldset>
+        </div>
         <label class="field">
           <span class="field__label">手機號碼</span>
           <input class="input" name="phone" type="tel" inputmode="numeric" maxlength="12" autocomplete="tel" required placeholder="09xxxxxxxx">

@@ -1173,3 +1173,27 @@ html.is-page-wait body {
     animation: none !important;
   }
 }
+
+/* ===== 姓氏與稱謂同一列 ===== */
+.name-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* 寬度約可容納 2.5 個全形字 */
+.input--surname {
+  width: calc(2.5em + 2 * var(--space-3) + 2px);
+}
+
+.name-row__title {
+  border: none;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.name-row__title .radio-chip span {
+  padding: 0 var(--space-3);
+}
