@@ -13,28 +13,31 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,progress_activity,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/components.css">
+<script src="js/core/page-wait-boot.js"></script>
 <title>九愛！買｜點餐</title>
 <script type="module" src="js/pages/order.js"></script>
 </head>
 <body>
   <header class="topbar">
     <div class="topbar__inner">
-      <a id="back-menu" class="btn btn--ghost btn--icon" href="#" aria-label="返回菜單" hidden>
-        <span class="material-symbols-rounded icon" aria-hidden="true">arrow_back</span>
-      </a>
       <img class="topbar__logo" src="assets/brand/logo-horizontal.png" alt="九愛！買" width="640" height="260">
       <span class="topbar__spacer"></span>
-      <span id="view-title" class="topbar__title">菜單</span>
+      <a id="back-menu" class="btn btn--ghost btn--icon" href="#" aria-label="返回菜單" hidden>
+        <span class="material-symbols-rounded icon" aria-hidden="true">arrow_back_ios_new</span>
+      </a>
     </div>
   </header>
 
   <main class="page stack">
     <div id="banner" class="banner" hidden></div>
-    <section id="state-loading" class="empty">載入中</section>
+    <section id="state-loading" class="loading">
+      <span class="material-symbols-rounded icon spin" aria-hidden="true">progress_activity</span>
+      <span>載入中</span>
+    </section>
 
     <section id="state-invalid" class="card stack" hidden>
       <div class="banner banner--danger">
@@ -61,8 +64,8 @@
         <div id="cart-lines"></div>
         <div class="stack" style="margin-top:var(--space-3)">
           <div class="summary-row"><span>數量</span><span id="cart-count"></span></div>
-          <div class="summary-row summary-row--total"><span>金額</span><span id="cart-total"></span></div>
-          <p class="muted text-sm">現場以園遊券付款，實際金額以攤位接單時的價格為準。</p>
+          <div class="summary-row summary-row--total"><span>總金額</span><span id="cart-total"></span></div>
+          <p class="muted text-xs">請至攤位以園遊券付款</p>
           <div id="limit-warning" class="banner banner--danger" hidden></div>
         </div>
       </div>
@@ -73,10 +76,17 @@
           <span class="field__label">姓氏</span>
           <input class="input" name="surname" maxlength="10" autocomplete="family-name" required placeholder="例如：王">
         </label>
+        <fieldset class="field" style="border:none;padding:0;margin:0">
+          <legend class="field__label">稱謂</legend>
+          <div class="radio-group">
+            <label class="radio-chip"><input type="radio" name="title" value="先生" required><span>先生</span></label>
+            <label class="radio-chip"><input type="radio" name="title" value="小姐"><span>小姐</span></label>
+            <label class="radio-chip"><input type="radio" name="title" value="其他"><span>其他</span></label>
+          </div>
+        </fieldset>
         <label class="field">
           <span class="field__label">手機號碼</span>
           <input class="input" name="phone" type="tel" inputmode="numeric" maxlength="12" autocomplete="tel" required placeholder="09xxxxxxxx">
-          <span class="field__hint">餐點完成時用來通知你取餐</span>
         </label>
         <label class="check">
           <input type="checkbox" name="consent" required>

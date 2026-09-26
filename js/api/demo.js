@@ -193,7 +193,7 @@ export const api = {
     return out;
   },
 
-  async submitPreorder({ lines, surname, phone, consentText }) {
+  async submitPreorder({ lines, surname, title, phone, consentText }) {
     await delay(300);
     const uid = customerUid();
     const settings = { ...DEFAULT_SETTINGS, ...db.settings };
@@ -215,7 +215,7 @@ export const api = {
     db.orders[id] = {
       id, type: 'preorder', seq, no, status: 'pending', uid,
       items: lines.map((l) => ({ itemId: l.itemId, qty: l.qty, option: l.option ?? null })),
-      itemCount: count, surname, pushEnabled: false, messages: [],
+      itemCount: count, surname, title, pushEnabled: false, messages: [],
       createdAt: now, updatedAt: now,
     };
     db.contacts[id] = { orderId: id, surname, phone, consentNotify: true, consentText, consentAt: now, createdAt: now };
@@ -245,6 +245,8 @@ export const api = {
     const o = getOrder(orderId);
     if (o.uid !== customerUid()) throw new ApiError('permission');
     if (o.status !== 'pending') throw new ApiError('bad-state', '攤位已接單，無法取消，請至攤位洽詢。');
+    // 與安全規則相同：送出 3 分鐘內才能取消
+    if (Date.now() - o.createdAt >= 3 * 60 * 1000) throw new ApiError('permission');
     Object.assign(o, { status: 'cancelled', cancelledAt: Date.now(), updatedAt: Date.now() });
     commit();
   },
@@ -374,7 +376,7 @@ export const api = {
     return db.contacts[orderId] ? structuredClone(db.contacts[orderId]) : null;
   },
 
-  async createWalkin({ lines, payment, later, surname = '', phone = '' }) {
+  async createWalkin({ lines, payment, later, surname = '', title = '', phone = '' }) {
     await delay(200);
     const staff = requireRole(STAFF);
     const problems = stockProblems(lines, itemsMap());
@@ -392,7 +394,7 @@ export const api = {
       uid: null, claimedBy: null,
       items: lines.map((l) => ({ itemId: l.itemId, qty: l.qty, option: l.option ?? null })),
       lines: priced.lines, total: priced.total, itemCount: countItems(lines),
-      payment, surname, pushEnabled: false, messages: [], createdBy: staff.uid,
+      payment, surname, title, pushEnabled: false, messages: [], createdBy: staff.uid,
       createdAt: now, updatedAt: now, acceptedAt: now, establishedAt: now,
       ...(later ? {} : { readyAt: now, pickedAt: now }),
     };

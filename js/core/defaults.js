@@ -7,6 +7,7 @@ export const DEFAULT_SETTINGS = {
   acceptingPreorders: true,
   maxItemsPerOrder: 10,
   pickupReminderMinutes: 15,
+  showStockLeft: true, // 顧客端是否顯示「剩 N 份」
   consentText: '我同意攤位使用我填寫的姓氏與電話，於餐點完成時通知我取餐。',
   messageTemplates: [
     '您的餐點已完成，請至攤位取餐。',

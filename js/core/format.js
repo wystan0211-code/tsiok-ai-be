@@ -62,6 +62,14 @@ export const STATUS_LABEL = {
 
 export const TYPE_LABEL = { preorder: '預點', walkin: '現場', manual: '手動' };
 
+// 稱謂選項(姓氏與稱謂皆必填)
+export const TITLES = ['先生', '小姐', '其他'];
+
+// 顯示用姓名：姓氏 + 稱謂，例如「王先生」
+export function personName(surname, title) {
+  return `${surname || ''}${surname ? title || '' : ''}`;
+}
+
 export const ROLE_LABEL = { admin: '管理員', manager: '攤位主管', staff: '店員' };
 
 export function escapeHtml(value) {

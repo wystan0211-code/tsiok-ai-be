@@ -7,6 +7,7 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  scrollbar-gutter: stable; /* 預留捲軸空間，頁面長短不同時版面不左右跳動 */
 }
 
 body {
@@ -101,6 +102,10 @@ textarea {
   font-size: var(--text-sm);
 }
 
+.text-xs {
+  font-size: var(--text-xs);
+}
+
 .light {
   font-weight: var(--weight-light);
 }
@@ -118,4 +123,9 @@ textarea {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* 前面的區塊都隱藏時使用，讓內容緊接在頁面上緣(例如訂單進度條) */
+.stack > .flush {
+  margin-top: 0;
 }

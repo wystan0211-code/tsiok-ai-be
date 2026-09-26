@@ -67,11 +67,14 @@ export function openDialog({
   });
 }
 
-export async function confirmDialog(title, message, { confirmLabel = '確定', danger = false } = {}) {
+// solid:true 時確認按鈕為紅底白字
+export async function confirmDialog(title, message, { confirmLabel = '確定', danger = false, solid = false } = {}) {
+  let variant = 'primary';
+  if (danger) variant = solid ? 'danger-solid' : 'danger';
   const { value } = await openDialog({
     title,
     body: `<p>${escapeHtml(message)}</p>`,
-    actions: [{ label: confirmLabel, value: 'ok', variant: danger ? 'danger' : 'primary' }],
+    actions: [{ label: confirmLabel, value: 'ok', variant }],
   });
   return value === 'ok';
 }

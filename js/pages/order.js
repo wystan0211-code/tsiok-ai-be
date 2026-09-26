@@ -5,10 +5,11 @@ import {
 } from '../core/ui.js';
 import { errorText } from '../core/errors.js';
 import { store } from '../core/storage.js';
-import { escapeHtml, money } from '../core/format.js';
+import { escapeHtml, money, personName, TITLES } from '../core/format.js';
 import {
   countItems, priceLines, stockProblems, summarizeLines, normalizePhone, isValidPhone,
 } from '../core/order-logic.js';
+import { goTo, pageReady } from '../core/transition.js';
 
 showDemoBanner(IS_DEMO);
 
@@ -75,14 +76,15 @@ function render() {
 
   if (!settings.acceptingPreorders) {
     showState('closed');
+    pageReady();
     return;
   }
   showState(null);
+  pageReady();
   const view = currentView();
   $('#view-menu').hidden = view !== 'menu';
   $('#view-checkout').hidden = view !== 'checkout';
   $('#back-menu').hidden = view !== 'checkout';
-  $('#view-title').textContent = view === 'checkout' ? '確認訂單' : '菜單';
   renderMenu();
   renderCartBar(view);
   if (view === 'checkout') renderCheckout();
@@ -104,16 +106,19 @@ function renderMenu() {
     let control;
     if (soldOut) control = '<span class="badge badge--danger">已售完</span>';
     else if (item.options?.length) {
-      control = `<button class="btn btn--primary btn--sm" data-action="choose" data-id="${item.id}">${icon('add', 'icon--sm')}選擇${qty ? `(${qty})` : ''}</button>`;
+      // 有選項的品項：加號開啟選項視窗，旁邊顯示已加入的數量
+      control = `${qty ? `<span class="muted text-sm" aria-label="已加入 ${qty} 份">×${qty}</span>` : ''}
+        <button type="button" class="btn-add press" data-action="choose" data-id="${item.id}" aria-label="加入 ${escapeHtml(item.name)}">${icon('add')}</button>`;
     } else if (qty) {
       control = `<div class="stepper">
-          <button type="button" data-action="minus" data-id="${item.id}" aria-label="減少 ${escapeHtml(item.name)}">${icon('remove', 'icon--sm')}</button>
+          <button type="button" class="press" data-action="minus" data-id="${item.id}" aria-label="減少 ${escapeHtml(item.name)}">${icon('remove', 'icon--sm')}</button>
           <span class="stepper__value" aria-live="polite">${qty}</span>
-          <button type="button" data-action="plus" data-id="${item.id}" aria-label="增加 ${escapeHtml(item.name)}">${icon('add', 'icon--sm')}</button>
+          <button type="button" class="press" data-action="plus" data-id="${item.id}" aria-label="增加 ${escapeHtml(item.name)}">${icon('add', 'icon--sm')}</button>
         </div>`;
     } else {
-      control = `<button class="btn btn--primary btn--sm" data-action="plus" data-id="${item.id}">${icon('add', 'icon--sm')}加入</button>`;
+      control = `<button type="button" class="btn-add press" data-action="plus" data-id="${item.id}" aria-label="加入 ${escapeHtml(item.name)}">${icon('add')}</button>`;
     }
+    const showLeft = settings.showStockLeft !== false && left != null && left > 0 && left <= 10;
     return `<article class="menu-item ${soldOut ? 'menu-item--soldout' : ''}">
       ${img}
       <div class="menu-item__body">
@@ -121,11 +126,11 @@ function renderMenu() {
         ${item.description ? `<p class="menu-item__desc">${escapeHtml(item.description)}</p>` : ''}
         <p class="row text-sm muted">
           ${item.prepMinutes ? `<span class="row" style="gap:2px">${icon('schedule', 'icon--sm')}約 ${item.prepMinutes} 分鐘</span>` : ''}
-          ${left != null && left > 0 && left <= 10 ? `<span class="badge badge--warning">剩 ${left} 份</span>` : ''}
+          ${showLeft ? `<span class="badge badge--warning">剩 ${left} 份</span>` : ''}
         </p>
         <div class="menu-item__foot">
           <span class="menu-item__price">${money(item.price)}</span>
-          ${control}
+          <div class="menu-item__control">${control}</div>
         </div>
       </div>
     </article>`;
@@ -150,20 +155,20 @@ function renderCheckout() {
     return `<div class="cart-line">
       <div class="cart-line__name">
         <div>${escapeHtml(item.name)}${l.option ? `<span class="muted">(${escapeHtml(l.option)})</span>` : ''}</div>
-        <div class="muted text-sm">${money(item.price)} × ${l.qty} = ${money(item.price * l.qty)}</div>
+        <div class="muted text-xs">${money(item.price)} × ${l.qty} = ${money(item.price * l.qty)}</div>
       </div>
       <div class="stepper">
-        <button type="button" data-action="line-minus" data-index="${i}" aria-label="減少">${icon(l.qty === 1 ? 'delete' : 'remove', 'icon--sm')}</button>
+        <button type="button" class="press" data-action="line-minus" data-index="${i}" aria-label="減少">${icon(l.qty === 1 ? 'delete' : 'remove', 'icon--sm')}</button>
         <span class="stepper__value">${l.qty}</span>
-        <button type="button" data-action="line-plus" data-index="${i}" aria-label="增加">${icon('add', 'icon--sm')}</button>
+        <button type="button" class="press" data-action="line-plus" data-index="${i}" aria-label="增加">${icon('add', 'icon--sm')}</button>
       </div>
     </div>`;
   }).join('');
-  $('#cart-count').textContent = `${count} / ${max} 件`;
+  $('#cart-count').textContent = `${count} 件`;
   $('#cart-total').textContent = money(priced.total);
   const warn = $('#limit-warning');
   warn.hidden = count <= max;
-  warn.innerHTML = `${icon('warning')}<p>單筆預點最多 ${max} 件，超過會被系統拒絕，請減少數量或直接到攤位點餐。</p>`;
+  warn.innerHTML = `${icon('warning')}<p>為了避免惡意棄單，如欲購買大量請至攤位。</p>`;
   $('#consent-text').textContent = settings.consentText;
 }
 
@@ -218,8 +223,9 @@ const form = $('#checkout-form');
 const draft = store.get(FORM_KEY, {});
 form.surname.value = draft.surname || '';
 form.phone.value = draft.phone || '';
+if (TITLES.includes(draft.title)) form.querySelector(`[name=title][value="${draft.title}"]`).checked = true;
 form.addEventListener('input', () => {
-  store.set(FORM_KEY, { surname: form.surname.value, phone: form.phone.value });
+  store.set(FORM_KEY, { surname: form.surname.value, title: form.elements.title.value, phone: form.phone.value });
 });
 
 function formError(message) {
@@ -236,8 +242,10 @@ form.addEventListener('submit', (e) => {
 async function submit() {
   formError('');
   const surname = form.surname.value.trim();
+  const title = form.elements.title.value;
   const phone = normalizePhone(form.phone.value);
   if (!surname) return formError('請填寫姓氏。');
+  if (!TITLES.includes(title)) return formError('請選擇稱謂。');
   if (!isValidPhone(phone)) return formError('手機號碼格式不正確，請輸入 09 開頭的 10 碼號碼。');
   if (!form.consent.checked) return formError('請勾選同意取餐通知。');
 
@@ -249,7 +257,7 @@ async function submit() {
   if (count > settings.maxItemsPerOrder) {
     const summary = summarizeLines(priceLines(cart.lines, map).lines);
     try {
-      await api.reportOverLimit({ surname, phone, summary, count });
+      await api.reportOverLimit({ surname: personName(surname, title), phone, summary, count });
     } catch (err) {
       console.warn(err);
     }
@@ -262,14 +270,14 @@ async function submit() {
 
   try {
     const { orderId, no } = await api.submitPreorder({
-      lines: cart.lines, surname, phone, consentText: settings.consentText,
+      lines: cart.lines, surname, title, phone, consentText: settings.consentText,
     });
     const history = store.get(HISTORY_KEY, []);
     history.unshift({ orderId, no, at: Date.now() });
     store.set(HISTORY_KEY, history.slice(0, 10));
     cart = { lines: [] };
     store.set(CART_KEY, cart);
-    location.replace(`track.html?o=${encodeURIComponent(orderId)}&new=1`);
+    goTo(`track.html?o=${encodeURIComponent(orderId)}&new=1`, { replace: true });
   } catch (err) {
     formError(errorText(err));
   }
@@ -292,6 +300,7 @@ async function init() {
     const check = await api.checkSession(token);
     if (!check.ok) {
       showState('invalid');
+      pageReady();
       if (check.reason === 'used' && check.orderId) {
         $('#invalid-text').textContent = '這個點餐連結已經送出過訂單。';
         $('#invalid-action').textContent = '查看訂單進度';
@@ -301,6 +310,7 @@ async function init() {
     }
   } catch (err) {
     showState('invalid');
+    pageReady();
     $('#invalid-text').textContent = errorText(err);
     return;
   }

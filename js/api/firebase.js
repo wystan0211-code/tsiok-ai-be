@@ -203,7 +203,7 @@ export const api = {
     return out;
   }),
 
-  submitPreorder: ({ lines, surname, phone, consentText }) => guard(async () => {
+  submitPreorder: ({ lines, surname, title, phone, consentText }) => guard(async () => {
     const uid = await customerUid();
     const settings = { ...DEFAULT_SETTINGS, ...(snapData(await getDoc(ref('settings', 'app'))) || {}) };
     if (!settings.acceptingPreorders) throw new ApiError('closed');
@@ -225,7 +225,7 @@ export const api = {
         tx.set(ref('counters', 'A'), { value: seq, lastOrderId: orderRef.id });
         tx.set(orderRef, {
           type: 'preorder', seq, no, status: 'pending', uid,
-          items: cleanLines(lines), itemCount: count, surname, pushEnabled: false,
+          items: cleanLines(lines), itemCount: count, surname, title, pushEnabled: false,
           createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
         });
         tx.set(ref('contacts', orderRef.id), {
@@ -252,7 +252,7 @@ export const api = {
   reportOverLimit: ({ surname, phone, summary, count }) => guard(async () => {
     const uid = await customerUid();
     await setDoc(ref('inbox', uid), {
-      type: 'over-limit', surname: surname.slice(0, 10), phone: phone.slice(0, 12),
+      type: 'over-limit', surname: surname.slice(0, 12), phone: phone.slice(0, 12),
       summary: summary.slice(0, 300), count, attempts: increment(1), read: false,
       lastAt: serverTimestamp(),
     }, { merge: true });
@@ -401,7 +401,7 @@ export const api = {
 
   getContact: (orderId) => guard(async () => snapData(await getDoc(ref('contacts', orderId)))),
 
-  createWalkin: ({ lines, payment, later, surname = '', phone = '' }) => guard(async () => {
+  createWalkin: ({ lines, payment, later, surname = '', title = '', phone = '' }) => guard(async () => {
     const staffUid = auth.currentUser?.uid;
     const orderRef = doc(collection(db, 'orders'));
     return runTransaction(db, async (tx) => {
@@ -420,7 +420,7 @@ export const api = {
       tx.set(orderRef, {
         type: 'walkin', seq, no, status: later ? 'accepted' : 'picked', later: !!later,
         uid: null, claimedBy: null, items: cleanLines(lines), lines: priced.lines, total: priced.total,
-        itemCount: countItems(lines), payment, surname, pushEnabled: false, messages: [], createdBy: staffUid,
+        itemCount: countItems(lines), payment, surname, title, pushEnabled: false, messages: [], createdBy: staffUid,
         createdAt: now, updatedAt: now, acceptedAt: now, establishedAt: now,
         ...(later ? {} : { readyAt: now, pickedAt: now }),
       });

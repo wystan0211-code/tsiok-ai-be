@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,progress_activity,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/components.css">
@@ -21,46 +21,45 @@
 <script type="module" src="js/pages/entry.js"></script>
 </head>
 <body>
-  <main class="page">
-    <section class="hero">
-      <img class="hero__logo" src="assets/brand/logo-horizontal.png" alt="九愛！買" width="640" height="260">
-      <p class="muted">園遊會攤位預先點餐，餐點完成時通知你取餐</p>
-    </section>
+  <div class="entry">
+    <main class="page entry__main">
+      <section class="hero">
+        <img class="hero__logo" src="assets/brand/logo-horizontal.png" alt="九愛！買" width="640" height="260">
+        <p class="entry__slogan">線上先點餐。就是快<br>Just Grab &amp; Go</p>
+      </section>
 
-    <div id="banner" class="banner" hidden></div>
+      <div id="banner" class="banner" hidden></div>
 
-    <section id="state-loading" class="empty">載入中</section>
+      <section id="state-loading" class="loading">
+        <span class="material-symbols-rounded icon spin" aria-hidden="true">progress_activity</span>
+        <span>載入中</span>
+      </section>
 
-    <section id="state-closed" class="card stack" hidden>
-      <div class="banner banner--danger">
-        <span class="material-symbols-rounded icon" aria-hidden="true">block</span>
-        <p>攤位目前暫停接受預點，請直接到攤位點餐。</p>
+      <section id="state-closed" class="card stack" hidden>
+        <div class="banner banner--danger">
+          <span class="material-symbols-rounded icon" aria-hidden="true">block</span>
+          <p>攤位目前暫停接受預點，請直接到攤位點餐。</p>
+        </div>
+      </section>
+
+      <section id="state-active" class="card stack" hidden>
+        <h2>你有一筆進行中的訂單</h2>
+        <p class="muted">訂單完成取餐後，才能再預點新的訂單。</p>
+      </section>
+    </main>
+
+    <div class="entry__actions">
+      <div class="entry__actions-inner">
+        <a class="btn btn--ghost btn--sm" href="track.html">
+          <span class="material-symbols-rounded icon icon--sm" aria-hidden="true">search</span>
+          找回我的訂單
+        </a>
+        <button id="start-btn" class="btn btn--primary btn--lg btn--block press" type="button" hidden>開始點餐</button>
+        <a id="active-link" class="btn btn--primary btn--lg btn--block press" href="track.html" hidden>
+          查看訂單進度 <span id="active-no" class="display-no"></span>
+        </a>
       </div>
-    </section>
-
-    <section id="state-active" class="card stack" hidden>
-      <h2>你有一筆進行中的訂單</h2>
-      <p class="muted">訂單完成取餐後，才能再預點新的訂單。</p>
-      <a id="active-link" class="btn btn--primary btn--lg btn--block" href="track.html">
-        <span class="material-symbols-rounded icon" aria-hidden="true">receipt_long</span>
-        查看訂單進度 <span id="active-no" class="display-no"></span>
-      </a>
-    </section>
-
-    <section id="state-ready" class="stack" hidden>
-      <button id="start-btn" class="btn btn--primary btn--lg btn--block" type="button">
-        <span class="material-symbols-rounded icon" aria-hidden="true">restaurant</span>
-        開始預點
-      </button>
-      <p class="muted text-sm">每次掃描 QR code 會產生一次性的點餐連結，連結無法分享給其他人使用。</p>
-    </section>
-
-    <p class="row" style="justify-content:center;margin-top:var(--space-6)">
-      <a class="btn btn--ghost btn--sm" href="track.html">
-        <span class="material-symbols-rounded icon icon--sm" aria-hidden="true">search</span>
-        找回我的訂單
-      </a>
-    </p>
-  </main>
+    </div>
+  </div>
 </body>
 </html>

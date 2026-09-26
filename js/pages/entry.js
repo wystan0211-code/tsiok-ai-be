@@ -4,12 +4,15 @@ import { $, showDemoBanner, withBusy, toast } from '../core/ui.js';
 import { errorText } from '../core/errors.js';
 import { isFinal } from '../core/order-logic.js';
 import { escapeHtml } from '../core/format.js';
+import { goTo } from '../core/transition.js';
 
 showDemoBanner(IS_DEMO);
 
-const states = ['loading', 'closed', 'active', 'ready'];
+const states = ['loading', 'closed', 'active'];
 function show(name) {
   for (const s of states) $(`#state-${s}`).hidden = s !== name;
+  $('#start-btn').hidden = name !== 'ready';
+  $('#active-link').hidden = name !== 'active';
 }
 
 let settings = null;
@@ -34,7 +37,7 @@ function render() {
 $('#start-btn').addEventListener('click', (e) => withBusy(e.currentTarget, async () => {
   try {
     const token = await api.startSession();
-    location.replace(`order.html?t=${token}`);
+    goTo(`order.html?t=${token}`, { replace: true });
   } catch (err) {
     if (err.code === 'active-order') {
       customerState = await api.getCustomerState();
@@ -44,6 +47,11 @@ $('#start-btn').addEventListener('click', (e) => withBusy(e.currentTarget, async
     toast(errorText(err), 'danger');
   }
 }));
+
+$('#active-link').addEventListener('click', (e) => {
+  e.preventDefault();
+  goTo(e.currentTarget.href);
+});
 
 async function init() {
   try {

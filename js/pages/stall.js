@@ -7,7 +7,7 @@ import { errorText } from '../core/errors.js';
 import { requireStaff, hasRole } from '../core/guard.js';
 import { store } from '../core/storage.js';
 import {
-  escapeHtml, money, time, minutesSince, fillTemplate, TYPE_LABEL, ROLE_LABEL, STATUS_LABEL,
+  escapeHtml, money, time, minutesSince, fillTemplate, personName, TITLES, TYPE_LABEL, ROLE_LABEL, STATUS_LABEL,
 } from '../core/format.js';
 import {
   countItems, displayLines, displayTotal, lineLabel, priceLines, stockProblems, summarizeLines,
@@ -93,7 +93,7 @@ function cardHtml(o, forceOpen = false) {
           <span class="muted text-sm">${time(o.createdAt)}・${minutesSince(since)} 分鐘</span>
         </div>
         <div class="row">
-          ${o.surname ? `<strong>${escapeHtml(o.surname)}</strong>` : ''}
+          ${o.surname ? `<strong>${escapeHtml(personName(o.surname, o.title))}</strong>` : ''}
           <span>${o.itemCount || countItems(lines)} 件</span>
           <span>${money(total)}</span>
           ${badges}
@@ -133,7 +133,7 @@ function renderBoard() {
     for (const el of $$(`[data-count="${col}"]`)) el.textContent = list.length;
   }
   const pending = groups.pending.length;
-  $('#pending-count').hidden = pending === 0;
+  $('#pending-count').classList.toggle('is-empty', pending === 0);
   $('#pending-count').textContent = pending;
   document.title = pending ? `(${pending}) ${baseTitle}` : baseTitle;
   loadOpenContacts();
@@ -347,7 +347,7 @@ async function doSms(o) {
     toast('這筆訂單沒有留電話', 'danger');
     return;
   }
-  const body = fillTemplate(settings?.smsTemplate, { no: o.no, surname: contact.surname || o.surname || '' });
+  const body = fillTemplate(settings?.smsTemplate, { no: o.no, surname: personName(o.surname || contact.surname || '', o.title) });
   location.href = `sms:${contact.phone}?&body=${encodeURIComponent(body)}`;
 }
 
@@ -476,6 +476,14 @@ async function submitPos() {
     return;
   }
   const later = pos.mode === 'later';
+  const surname = later ? form.surname.value.trim() : '';
+  const title = later ? form.elements.title.value : '';
+  // 稍後取餐：姓氏與稱謂必填
+  if (later && (!surname || !TITLES.includes(title))) {
+    err.textContent = '請填寫姓氏並選擇稱謂。';
+    err.hidden = false;
+    return;
+  }
   const phone = later ? normalizePhone(form.phone.value) : '';
   if (phone && !isValidPhone(phone)) {
     err.textContent = '手機號碼格式不正確，或留空。';
@@ -485,13 +493,13 @@ async function submitPos() {
   const total = priceLines(pos.lines, itemsById()).total;
   try {
     const { orderId, no } = await api.createWalkin({
-      lines: pos.lines, payment: pos.payment, later,
-      surname: later ? form.surname.value.trim() : '', phone,
+      lines: pos.lines, payment: pos.payment, later, surname, title, phone,
     });
     pos.lines = [];
     savePos();
     form.surname.value = '';
     form.phone.value = '';
+    form.querySelectorAll('[name=title]').forEach((r) => { r.checked = false; });
     renderPosCart();
     if (later) showPickupTicket(orderId, no, total);
     else toast(`已記帳 ${no}・${money(total)}`, 'success');
@@ -520,7 +528,7 @@ function showPickupTicket(orderId, no, total) {
 function renderInbox() {
   const list = $('#inbox-list');
   const unread = inbox.filter((m) => !m.read);
-  $('#inbox-count').hidden = unread.length === 0;
+  $('#inbox-count').classList.toggle('is-empty', unread.length === 0);
   $('#inbox-count').textContent = unread.length;
   if (knownUnread) {
     const fresh = unread.filter((m) => !knownUnread.has(`${m.id}:${m.lastAt}`));

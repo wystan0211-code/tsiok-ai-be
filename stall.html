@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,progress_activity,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/components.css">
@@ -52,18 +52,18 @@
 
     <nav class="tabs" role="tablist" aria-label="營運功能">
       <button class="tab" role="tab" data-tab="board" aria-selected="true">
-        <span class="material-symbols-rounded icon" aria-hidden="true">view_kanban</span>看板
-        <span id="pending-count" class="count-dot" hidden></span>
+        <span class="material-symbols-rounded icon" aria-hidden="true">view_kanban</span><span class="tab__label" data-label="看板">看板</span>
+        <span id="pending-count" class="count-dot is-empty">0</span>
       </button>
       <button class="tab" role="tab" data-tab="pos" aria-selected="false">
-        <span class="material-symbols-rounded icon" aria-hidden="true">point_of_sale</span>現場點餐
+        <span class="material-symbols-rounded icon" aria-hidden="true">point_of_sale</span><span class="tab__label" data-label="現場點餐">現場點餐</span>
       </button>
       <button class="tab" role="tab" data-tab="inbox" aria-selected="false">
-        <span class="material-symbols-rounded icon" aria-hidden="true">inbox</span>收件匣
-        <span id="inbox-count" class="count-dot" hidden></span>
+        <span class="material-symbols-rounded icon" aria-hidden="true">inbox</span><span class="tab__label" data-label="收件匣">收件匣</span>
+        <span id="inbox-count" class="count-dot is-empty">0</span>
       </button>
       <button class="tab" role="tab" data-tab="pickup" aria-selected="false">
-        <span class="material-symbols-rounded icon" aria-hidden="true">search</span>取餐核對
+        <span class="material-symbols-rounded icon" aria-hidden="true">search</span><span class="tab__label" data-label="取餐核對">取餐核對</span>
       </button>
     </nav>
 
@@ -114,9 +114,17 @@
           </fieldset>
           <div id="pos-later-fields" class="stack" hidden>
             <label class="field">
-              <span class="field__label">姓氏(選填)</span>
+              <span class="field__label">姓氏</span>
               <input class="input" name="surname" maxlength="10">
             </label>
+            <fieldset class="field" style="border:none;padding:0;margin:0">
+              <legend class="field__label">稱謂</legend>
+              <div class="radio-group">
+                <label class="radio-chip"><input type="radio" name="title" value="先生"><span>先生</span></label>
+                <label class="radio-chip"><input type="radio" name="title" value="小姐"><span>小姐</span></label>
+                <label class="radio-chip"><input type="radio" name="title" value="其他"><span>其他</span></label>
+              </div>
+            </fieldset>
             <label class="field">
               <span class="field__label">手機號碼(選填，可用簡訊通知)</span>
               <input class="input" name="phone" type="tel" inputmode="numeric" maxlength="12" placeholder="09xxxxxxxx">

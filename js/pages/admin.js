@@ -6,7 +6,7 @@ import {
 import { errorText } from '../core/errors.js';
 import { requireStaff, hasRole } from '../core/guard.js';
 import {
-  escapeHtml, money, dateTime, toDateInput, fromDateInput,
+  escapeHtml, money, dateTime, toDateInput, fromDateInput, personName,
   STATUS_LABEL, TYPE_LABEL, ROLE_LABEL,
 } from '../core/format.js';
 import { displayLines, isPaid, lineLabel, summarizeLines } from '../core/order-logic.js';
@@ -180,6 +180,7 @@ function fillSettings() {
   f.bannerActive.checked = !!settings.bannerActive;
   f.bannerText.value = settings.bannerText || '';
   f.acceptingPreorders.checked = !!settings.acceptingPreorders;
+  f.showStockLeft.checked = settings.showStockLeft !== false;
   f.maxItemsPerOrder.value = settings.maxItemsPerOrder;
   f.pickupReminderMinutes.value = settings.pickupReminderMinutes;
   f.paymentMethods.value = (settings.paymentMethods || []).join('、');
@@ -200,6 +201,7 @@ $('#settings-form').addEventListener('submit', (e) => {
       bannerActive: f.bannerActive.checked,
       bannerText: f.bannerText.value.trim(),
       acceptingPreorders: f.acceptingPreorders.checked,
+      showStockLeft: f.showStockLeft.checked,
       maxItemsPerOrder: Math.max(1, Math.round(Number(f.maxItemsPerOrder.value) || 10)),
       pickupReminderMinutes: Math.max(1, Math.round(Number(f.pickupReminderMinutes.value) || 15)),
       paymentMethods: splitList(f.paymentMethods.value),
@@ -290,7 +292,7 @@ function renderFinance() {
       <td>${TYPE_LABEL[o.type] || o.type}</td>
       <td>${o.deleted ? '已刪除' : (STATUS_LABEL[o.status] || o.status)}</td>
       <td>${dateTime(o.establishedAt || o.createdAt)}</td>
-      <td>${escapeHtml(o.surname || '')}</td>
+      <td>${escapeHtml(personName(o.surname, o.title))}</td>
       <td>${escapeHtml(summarizeLines(displayLines(o, {})))}${o.note ? `<div class="muted">${escapeHtml(o.note)}</div>` : ''}</td>
       <td class="num">${o.total != null ? money(o.total) : '—'}</td>
       <td>${escapeHtml(o.payment || '')}</td>
@@ -398,7 +400,7 @@ $('#finance-export').addEventListener('click', (e) => withBusy(e.currentTarget, 
   const header = ['訂單編號', '類型', '狀態', '已刪除', '姓氏', '電話', '品項', '件數', '金額', '付款方式', '送出時間', '確立時間', '取餐時間', '備註'];
   const rows = financeOrders.map((o) => [
     o.no, TYPE_LABEL[o.type] || o.type, STATUS_LABEL[o.status] || o.status, o.deleted ? '是' : '',
-    o.surname || '', contactMap[o.id]?.phone ? `="${contactMap[o.id].phone}"` : '', // 公式寫法讓 Excel 保留開頭的 0
+    personName(o.surname, o.title), contactMap[o.id]?.phone ? `="${contactMap[o.id].phone}"` : '', // 公式寫法讓 Excel 保留開頭的 0
     (o.lines || []).map((l) => `${lineLabel(l)}×${l.qty}`).join('、'), o.itemCount ?? '', o.total ?? '',
     o.payment || '', dateTime(o.createdAt), dateTime(o.establishedAt), dateTime(o.pickedAt), o.note || '',
   ]);

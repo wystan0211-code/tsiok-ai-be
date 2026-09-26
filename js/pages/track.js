@@ -12,6 +12,9 @@ import {
   displayLines, displayTotal, estimateReadyAt, isFinal, lineLabel, normalizePhone, isValidPhone,
 } from '../core/order-logic.js';
 import { beep, vibrate, unlockAudio } from '../core/sound.js';
+import { goTo, pageReady } from '../core/transition.js';
+
+const CANCEL_WINDOW_MS = 3 * 60 * 1000; // 送出後 3 分鐘內可取消(安全規則也有相同限制)
 
 showDemoBanner(IS_DEMO);
 
@@ -63,7 +66,7 @@ $('#find-form').addEventListener('submit', (e) => {
         err.hidden = false;
         return;
       }
-      location.href = `track.html?o=${encodeURIComponent(id)}`;
+      goTo(`track.html?o=${encodeURIComponent(id)}`);
     } catch (e2) {
       err.textContent = errorText(e2);
       err.hidden = false;
@@ -94,26 +97,25 @@ function renderNotify() {
     return;
   }
   box.hidden = false;
-  const keepOpen = '<p class="muted text-sm">開著這個頁面時，狀態會即時更新並播放提示音。</p>';
   if (order.pushEnabled) {
-    box.innerHTML = `<p class="row">${icon('notifications_active')}<strong>已開啟取餐通知</strong></p>${keepOpen}`;
+    box.innerHTML = `<p class="row">${icon('notifications_active')}<strong>已開啟取餐通知</strong></p>`;
     return;
   }
   if (IS_DEMO) {
-    box.innerHTML = `<p class="row">${icon('notifications')}<strong>取餐通知</strong></p><p class="muted text-sm">展示模式不支援推播。</p>${keepOpen}`;
+    box.innerHTML = `<p class="row">${icon('notifications')}<strong>取餐通知</strong></p><p class="muted text-sm">展示模式不支援推播。</p>`;
     return;
   }
   if (isIOS() && !isStandalone()) {
     box.innerHTML = `
       <p class="row">${icon('notifications')}<strong>iPhone 開啟取餐通知</strong></p>
       <p class="text-sm">iPhone 需要先把網頁加入主畫面才能收到通知：點 Safari 下方的分享按鈕，選「加入主畫面」，再從主畫面開啟「九愛！買」，回到這個頁面按「開啟取餐通知」。</p>
-      ${keepOpen}`;
+      `;
     return;
   }
   box.innerHTML = `
     <p class="row">${icon('notifications')}<strong>餐點完成時通知我</strong></p>
     <button id="push-btn" class="btn btn--primary btn--block" type="button">${icon('notifications_active')}開啟取餐通知</button>
-    ${keepOpen}`;
+    `;
   $('#push-btn').addEventListener('click', (e) => withBusy(e.currentTarget, async () => {
     try {
       await api.enablePush(order.id);
@@ -153,7 +155,7 @@ function renderOrder() {
     let cls = '';
     if (idx != null && (i < idx || order.status === 'picked')) cls = 'step--done';
     else if (i === idx) cls = 'step--current';
-    return `<li class="step ${cls}" ${i === idx ? 'aria-current="step"' : ''}><span class="step__bar"></span>${name}</li>`;
+    return `<li class="step ${cls}" ${i === idx ? 'aria-current="step"' : ''}><span class="step__bar"></span><span class="visually-hidden">${name}</span></li>`;
   }).join('');
 
   // 特殊狀態提示
@@ -179,11 +181,16 @@ function renderOrder() {
   $('#o-lines').innerHTML = lines.map((l) => `
     <div class="summary-row"><span>${escapeHtml(lineLabel(l))} × ${l.qty}</span><span>${money(l.subtotal)}</span></div>`).join('');
   $('#o-total').textContent = money(displayTotal(order, itemsById));
-  $('#o-price-note').textContent = order.lines?.length ? '' : '攤位接單後會確認最終金額。';
-  $('#o-time').textContent = `送出時間 ${dateTime(order.createdAt)}${order.establishedAt ? `｜確立時間 ${dateTime(order.establishedAt)}` : ''}`;
+  $('#o-time').innerHTML = `<p>送出時間 ${dateTime(order.createdAt)}</p>${order.establishedAt ? `<p>確立時間 ${dateTime(order.establishedAt)}</p>` : ''}`;
 
-  $('#o-cancel').hidden = !(order.status === 'pending' && order.uid === uid);
+  $('#o-cancel').hidden = !canCancel();
   $('#o-again').hidden = !isFinal(order);
+}
+
+// 本人、等待接單中、送出 3 分鐘內才顯示取消按鈕
+function canCancel() {
+  return order.status === 'pending' && order.uid === uid
+    && Date.now() - (order.createdAt || 0) < CANCEL_WINDOW_MS;
 }
 
 // 狀態變化時的提醒
@@ -224,14 +231,15 @@ async function showLocalNotification(title, body) {
 }
 
 $('#o-cancel').addEventListener('click', async (e) => {
-  const ok = await confirmDialog('取消訂單', '確定要取消這筆訂單嗎？', { confirmLabel: '取消訂單', danger: true });
+  const ok = await confirmDialog('取消訂單', '確定要取消這筆訂單嗎？', { confirmLabel: '取消訂單', danger: true, solid: true });
   if (!ok) return;
   withBusy(e.currentTarget, async () => {
     try {
       await api.cancelOrder(order.id);
       toast('訂單已取消');
     } catch (err) {
-      toast(errorText(err), 'danger');
+      // 超過可取消時間或攤位已接單時，安全規則會拒絕
+      toast(err.code === 'permission' || err.code === 'bad-state' ? '目前無法取消，請至攤位洽詢。' : errorText(err), 'danger');
     }
   });
 });
@@ -251,6 +259,7 @@ async function init() {
   if (!orderId) {
     show('find');
     renderHistory();
+    pageReady();
     return;
   }
   if (params.get('claim') === '1') {
@@ -284,6 +293,7 @@ async function init() {
       renderHistory();
       $('#find-error').textContent = '找不到這筆訂單，請輸入編號與電話查詢。';
       $('#find-error').hidden = false;
+      pageReady();
       return;
     }
     prevOrder = order;
@@ -296,14 +306,15 @@ async function init() {
       store.set(HISTORY_KEY, hist);
     }
     renderOrder();
+    pageReady();
     notifyChanges();
     firstSnapshot = false;
   });
 
   // 每 30 秒更新預估時間
   setInterval(() => {
-    if (order && order.status === 'accepted') renderOrder();
-  }, 30000);
+    if (order && ['pending', 'accepted'].includes(order.status)) renderOrder();
+  }, 15000);
 }
 
 init();

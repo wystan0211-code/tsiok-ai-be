@@ -13,10 +13,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,progress_activity,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/components.css">
+<script src="js/core/page-wait-boot.js"></script>
 <title>九愛！買｜訂單進度</title>
 <script type="module" src="js/pages/track.js"></script>
 </head>
@@ -30,10 +31,13 @@
   </header>
 
   <main class="page stack">
-    <section id="state-loading" class="empty">載入中</section>
+    <section id="state-loading" class="loading">
+      <span class="material-symbols-rounded icon spin" aria-hidden="true">progress_activity</span>
+      <span>載入中</span>
+    </section>
 
     <!-- 找回訂單 -->
-    <section id="view-find" class="stack" hidden>
+    <section id="view-find" class="stack flush" hidden>
       <form id="find-form" class="card stack">
         <h2 class="section-title">找回訂單</h2>
         <label class="field">
@@ -57,15 +61,15 @@
     </section>
 
     <!-- 訂單進度 -->
-    <section id="view-order" class="stack" hidden>
+    <section id="view-order" class="stack flush" hidden>
+      <ol id="o-steps" class="steps" aria-label="訂單進度"></ol>
+
       <div class="card order-hero">
         <p class="muted">訂單編號</p>
         <p id="o-no" class="display-no order-hero__no"></p>
         <p id="o-status" class="order-hero__status"></p>
         <p id="o-eta" class="muted"></p>
       </div>
-
-      <ol id="o-steps" class="steps" aria-label="訂單進度"></ol>
 
       <div id="o-alert"></div>
 
@@ -79,14 +83,13 @@
       <section class="card stack">
         <h2 class="section-title">訂單明細</h2>
         <div id="o-lines"></div>
-        <div class="summary-row summary-row--total"><span>金額</span><span id="o-total"></span></div>
-        <p id="o-price-note" class="muted text-sm"></p>
-        <p id="o-time" class="muted text-sm"></p>
+        <div class="summary-row summary-row--total"><span>總金額</span><span id="o-total"></span></div>
+        <div id="o-time" class="muted text-xs"></div>
       </section>
 
       <div class="stack">
         <button id="o-cancel" class="btn btn--danger btn--block" type="button" hidden>
-          <span class="material-symbols-rounded icon" aria-hidden="true">cancel</span>
+          <span class="material-symbols-rounded icon icon--sm" aria-hidden="true">cancel</span>
           取消訂單
         </button>
         <a id="o-again" class="btn btn--primary btn--block" href="index.html" hidden>
