@@ -1,9 +1,8 @@
-// 入口頁：QR code 的目標網址。檢查是否有進行中訂單，再產生一次性點餐連結
+// 入口頁：QR code 的目標網址。畫面直接使用設計圖，按鈕依狀態顯示(公告只顯示在點餐頁)
 import { api, IS_DEMO } from '../api/index.js';
 import { $, showDemoBanner, withBusy, toast } from '../core/ui.js';
 import { errorText } from '../core/errors.js';
 import { isFinal } from '../core/order-logic.js';
-import { escapeHtml } from '../core/format.js';
 import { goTo } from '../core/transition.js';
 
 showDemoBanner(IS_DEMO);
@@ -20,10 +19,6 @@ let customerState = null;
 
 function render() {
   if (!settings || !customerState) return;
-  const banner = $('#banner');
-  banner.hidden = !(settings.bannerActive && settings.bannerText);
-  banner.innerHTML = `<span class="material-symbols-rounded icon" aria-hidden="true">campaign</span><p>${escapeHtml(settings.bannerText)}</p>`;
-
   const { order } = customerState;
   if (order && !isFinal(order)) {
     $('#active-link').href = `track.html?o=${encodeURIComponent(order.id)}`;
