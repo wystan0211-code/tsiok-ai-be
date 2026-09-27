@@ -266,6 +266,7 @@
 }
 
 .switch input {
+  flex-shrink: 0; /* 空間不足時也不能被壓縮，否則圓點會超出底色 */
   width: 44px;
   height: 24px;
   appearance: none;
@@ -280,13 +281,14 @@
 .switch input::after {
   content: '';
   position: absolute;
-  top: 3px;
+  top: 50%;
   left: 3px;
   width: 16px;
   height: 16px;
+  margin-top: -8px;
   border-radius: 50%;
   background: var(--color-control-border);
-  transition: transform 0.15s ease;
+  transition: left 0.15s ease;
 }
 
 .switch input:checked {
@@ -295,7 +297,7 @@
 }
 
 .switch input:checked::after {
-  transform: translateX(20px);
+  left: calc(100% - 19px); /* 以右緣定位，永遠在底色範圍內 */
   background: var(--color-text);
 }
 
@@ -781,8 +783,28 @@
 }
 
 .step--done .step__bar {
-  background: var(--color-text);
-  border-color: var(--color-text);
+  background: var(--color-primary-deep);
+  border-color: var(--color-primary-deep);
+}
+
+/* 已取餐：四條由左而右合併成一條綠色長條 */
+.steps--complete {
+  grid-template-columns: 1fr;
+}
+
+.step--complete .step__bar {
+  background: var(--color-success);
+  border-color: var(--color-success);
+  transform-origin: left center;
+  animation: step-merge 0.6s ease-out;
+}
+
+@keyframes step-merge {
+  from {
+    transform: scaleX(0.25);
+    background: var(--color-primary-deep);
+    border-color: var(--color-primary-deep);
+  }
 }
 
 .step--current .step__bar {
@@ -1135,36 +1157,108 @@ html.is-page-wait body {
   animation: spin 0.8s linear infinite;
 }
 
-/* ===== 入口頁 ===== */
-.entry {
+/* ===== 首頁(依設計稿) ===== */
+.home {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+  background-color: var(--color-bg);
+  background-image: url('../assets/brand/star-pattern.png');
+  background-size: 80px 62px; /* 星星大小與密度對照設計稿 */
 }
 
-.entry__main {
+/* 外框只裁切左右，斜放的 logo 帶超出畫面的部分不會造成橫向捲動 */
+.home__band-wrap {
+  width: 100%;
+  overflow-x: clip;
+  overflow-y: visible;
+  padding-top: clamp(40px, 9vh, 96px);
+}
+
+/* 斜放的白色 logo 帶，左右延伸到畫面外 */
+.home__band {
+  width: 140%;
+  margin-left: -20%;
+  padding: clamp(20px, 5vw, 40px) 0;
+  background: var(--color-surface);
+  border-top: 2px solid var(--color-text);
+  border-bottom: 2px solid var(--color-text);
+  transform: rotate(-6deg);
+  display: flex;
+  justify-content: center;
+}
+
+.home__logo {
+  width: min(78vw, 480px);
+  height: auto;
+}
+
+.home__main {
   flex: 1;
-}
-
-.entry__slogan {
-  font-size: var(--text-lg);
-  line-height: 1.5;
-}
-
-.entry__actions {
-  position: sticky;
-  bottom: 0;
-  padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
-  background: var(--color-bg);
-}
-
-.entry__actions-inner {
+  width: 100%;
   max-width: var(--content-max);
   margin: 0 auto;
+  padding: var(--space-6) var(--space-4) var(--space-4);
+}
+
+.home__bottom {
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+}
+
+.home__tagline {
+  text-align: right;
+  font-style: italic;
+  font-size: var(--text-xl);
+  line-height: 1.15;
+  padding: 0 var(--space-5) var(--space-4);
+}
+
+.home__sheet {
+  background: var(--color-cream);
+  border: 1px solid var(--color-text);
+  border-bottom: none;
+  border-radius: 28px 28px 0 0;
+  padding: var(--space-6) var(--space-5) calc(var(--space-6) + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  align-items: center;
+  gap: var(--space-4);
+}
+
+.home__title {
+  text-align: center;
+  font-size: clamp(1.5rem, 7vw, 2rem);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+}
+
+/* 「開始」文字置中，箭頭固定在右側 */
+.home__start {
+  position: relative;
+}
+
+.home__chevron {
+  position: absolute;
+  right: var(--space-4);
+  top: 50%;
+  margin-top: -12px;
+}
+
+.home__msg {
+  text-align: center;
+}
+
+.home__msg--danger {
+  color: var(--color-danger);
+}
+
+.home__loading {
+  padding: var(--space-2);
+}
+
+.home__find {
+  align-self: center;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1182,9 +1276,10 @@ html.is-page-wait body {
   flex-wrap: wrap;
 }
 
-/* 寬度約可容納 2.5 個全形字 */
-.input--surname {
-  width: calc(2.5em + 2 * var(--space-3) + 2px);
+/* 姓氏欄位填滿剩餘寬度，讓「其他」的右緣對齊下方的手機號碼欄位；最窄仍可容納 2.5 個全形字 */
+.name-row > .field {
+  flex: 1;
+  min-width: calc(2.5em + 2 * var(--space-3) + 2px);
 }
 
 .name-row__title {
@@ -1196,4 +1291,84 @@ html.is-page-wait body {
 
 .name-row__title .radio-chip span {
   padding: 0 var(--space-3);
+}
+
+/* ===== 攤位營運頁：手機版(寬度 899px 以下)，電腦版不受影響 ===== */
+.tabs__indicator {
+  display: none;
+}
+
+@media (max-width: 899px) {
+  .stall-title {
+    display: none;
+  }
+
+  /* 分頁移到畫面最下方，只顯示圖標 */
+  .tabs--bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    overflow: visible;
+    background: var(--color-bg);
+    border-top: 1px solid var(--color-divider);
+    border-bottom: none;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .tabs--bar .tab {
+    position: relative;
+    justify-content: center;
+    min-height: 56px;
+    padding: 0;
+    border-bottom: none;
+  }
+
+  .tabs--bar .tab__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .tabs--bar .tab[aria-selected='true'] .icon {
+    --icon-fill: 1;
+  }
+
+  /* 數量圓點疊在圖標右上角 */
+  .tabs--bar .count-dot {
+    position: absolute;
+    top: 6px;
+    left: calc(50% + 6px);
+  }
+
+  /* 黃橘色指示線，滑到目前選取的分頁 */
+  .tabs__indicator {
+    display: block;
+    position: absolute;
+    top: -1px;
+    left: 0;
+    width: 25%;
+    height: 3px;
+    padding: 0 var(--space-5);
+    background-clip: content-box;
+    background-color: var(--color-primary-deep);
+    transform: translateX(calc(var(--tab-index, 0) * 100%));
+    transition: transform 0.25s ease;
+  }
+
+  /* 內容與提示訊息避開底部分頁列 */
+  .has-tabbar main {
+    padding-bottom: calc(80px + env(safe-area-inset-bottom));
+  }
+
+  .has-tabbar .toast-box {
+    bottom: calc(72px + env(safe-area-inset-bottom));
+  }
 }

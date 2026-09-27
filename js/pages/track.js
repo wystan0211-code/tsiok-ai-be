@@ -147,16 +147,24 @@ function renderOrder() {
   if (order.status === 'picked') eta = `已於 ${time(order.pickedAt)} 取餐，謝謝光臨`;
   $('#o-eta').textContent = eta;
 
-  // 進度條
+  // 進度條(狀態沒變時不重畫，避免動畫重播)
   const steps = $('#o-steps');
   const idx = STEP_INDEX[order.status];
   steps.hidden = idx == null;
-  steps.innerHTML = STEP_NAMES[type].map((name, i) => {
-    let cls = '';
-    if (idx != null && (i < idx || order.status === 'picked')) cls = 'step--done';
-    else if (i === idx) cls = 'step--current';
-    return `<li class="step ${cls}" ${i === idx ? 'aria-current="step"' : ''}><span class="step__bar"></span><span class="visually-hidden">${name}</span></li>`;
-  }).join('');
+  const stepsKey = `${type}:${order.status}`;
+  if (steps.dataset.key !== stepsKey) {
+    steps.dataset.key = stepsKey;
+    const complete = order.status === 'picked';
+    steps.classList.toggle('steps--complete', complete);
+    steps.innerHTML = complete
+      ? '<li class="step step--complete"><span class="step__bar"></span><span class="visually-hidden">已取餐</span></li>'
+      : STEP_NAMES[type].map((name, i) => {
+        let cls = '';
+        if (idx != null && i < idx) cls = 'step--done';
+        else if (i === idx) cls = 'step--current';
+        return `<li class="step ${cls}" ${i === idx ? 'aria-current="step"' : ''}><span class="step__bar"></span><span class="visually-hidden">${name}</span></li>`;
+      }).join('');
+  }
 
   // 特殊狀態提示
   const alertBox = $('#o-alert');

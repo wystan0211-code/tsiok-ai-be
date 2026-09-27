@@ -13,7 +13,7 @@ import {
   countItems, displayLines, displayTotal, lineLabel, priceLines, stockProblems, summarizeLines,
   normalizePhone, isValidPhone, ACTIVE_STATUSES,
 } from '../core/order-logic.js';
-import { beep, isAudioReady } from '../core/sound.js';
+import { beep, unlockAudio } from '../core/sound.js';
 import { qrSvg } from '../core/qr.js';
 
 showDemoBanner(IS_DEMO);
@@ -38,7 +38,10 @@ const byId = (id) => orders.find((o) => o.id === id);
 
 // ===== 分頁 =====
 function selectTab(name) {
-  for (const tab of $$('.tab')) tab.setAttribute('aria-selected', String(tab.dataset.tab === name));
+  const tabs = $$('.tab');
+  for (const tab of tabs) tab.setAttribute('aria-selected', String(tab.dataset.tab === name));
+  // 手機版底部分頁列：指示線滑到選取的圖示下
+  $('.tabs--bar').style.setProperty('--tab-index', Math.max(0, tabs.findIndex((t) => t.dataset.tab === name)));
   for (const panel of ['board', 'pos', 'inbox', 'pickup']) $(`#panel-${panel}`).hidden = panel !== name;
   store.set('tab-stall-tab', name);
   if (name === 'pickup') $('#pickup-q').focus();
@@ -72,12 +75,12 @@ function cardHtml(o, forceOpen = false) {
       <button class="btn btn--primary" data-act="accept">${icon('check')}接單</button>
       <button class="btn btn--danger" data-act="reject">${icon('block')}拒絕</button>`;
   } else if (o.status === 'accepted') {
-    actions = `
+    actions = `${qrButton(o)}
       <button class="btn btn--primary" data-act="ready">${icon('notifications_active')}完成，通知取餐</button>
       <button class="btn" data-act="message">${icon('chat')}傳訊息</button>
       <button class="btn btn--ghost" data-act="picked">${icon('done_all')}已取餐</button>`;
   } else if (o.status === 'ready') {
-    actions = `
+    actions = `${qrButton(o)}
       <button class="btn btn--primary" data-act="picked">${icon('done_all')}已取餐</button>
       <button class="btn" data-act="message">${icon('chat')}傳訊息</button>
       <button class="btn" data-act="sms">${icon('sms')}簡訊通知</button>
@@ -111,6 +114,12 @@ function cardHtml(o, forceOpen = false) {
         ${actions ? `<div class="order-card__actions">${actions}</div>` : ''}
       </div>
     </details>`;
+}
+
+// 稍後取餐的現場訂單：可以再次顯示取餐 QR code
+function qrButton(o) {
+  return o.type === 'walkin' && o.later
+    ? `<button class="btn" data-act="qr">${icon('qr_code_2')}顯示 QR code</button>` : '';
 }
 
 function groupOrders() {
@@ -200,6 +209,7 @@ document.addEventListener('click', (e) => {
   const handlers = {
     accept: doAccept, reject: doReject, ready: doReady, picked: doPicked,
     undo: doUndo, message: doMessage, sms: doSms,
+    qr: async (order) => showPickupTicket(order.id, order.no, order.total),
   };
   withBusy(btn, () => handlers[btn.dataset.act](o));
 });
@@ -477,10 +487,10 @@ async function submitPos() {
   }
   const later = pos.mode === 'later';
   const surname = later ? form.surname.value.trim() : '';
-  const title = later ? form.elements.title.value : '';
-  // 稍後取餐：姓氏與稱謂必填
-  if (later && (!surname || !TITLES.includes(title))) {
-    err.textContent = '請填寫姓氏並選擇稱謂。';
+  const title = later && surname ? form.elements.title.value : '';
+  // 稍後取餐：姓氏選填；有填姓氏時需選稱謂
+  if (later && surname && !TITLES.includes(title)) {
+    err.textContent = '請選擇稱謂。';
     err.hidden = false;
     return;
   }
@@ -623,6 +633,8 @@ function renderAll() {
 }
 
 requireStaff('staff', (p) => {
+  // 預設開啟提示音：瀏覽器若仍要求先互動，第一次點擊畫面時會自動開啟
+  unlockAudio();
   $('#who').textContent = `${p.displayName}(${ROLE_LABEL[p.role]})`;
   $('#admin-link').hidden = !hasRole(p, 'manager');
   selectTab(store.get('tab-stall-tab', 'board'));
@@ -646,13 +658,6 @@ requireStaff('staff', (p) => {
   api.watchInbox((list) => {
     inbox = list;
     renderInbox();
-  });
-
-  // 提示音需要先點擊畫面才能播放
-  const hint = $('#sound-hint');
-  hint.hidden = isAudioReady();
-  document.addEventListener('pointerdown', () => {
-    setTimeout(() => { hint.hidden = isAudioReady(); }, 100);
   });
 
   // 每 30 秒更新經過時間與逾時提醒

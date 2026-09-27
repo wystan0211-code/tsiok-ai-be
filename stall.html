@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,progress_activity,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,chevron_right,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/components.css">
@@ -21,11 +21,11 @@
 <title>九愛！買｜攤位營運</title>
 <script type="module" src="js/pages/stall.js"></script>
 </head>
-<body>
+<body class="has-tabbar">
   <header class="topbar">
     <div class="topbar__inner">
       <img class="topbar__logo" src="assets/brand/logo-horizontal.png" alt="九愛！買" width="640" height="260">
-      <span class="topbar__title">營運</span>
+      <span class="topbar__title stall-title">營運</span>
       <span class="topbar__spacer"></span>
       <label class="switch text-sm">
         <input id="accepting" type="checkbox">
@@ -44,13 +44,10 @@
   </header>
 
   <main class="page page--wide stack">
-    <div id="sound-hint" class="banner" hidden>
-      <span class="material-symbols-rounded icon" aria-hidden="true">volume_up</span>
-      <p>點一下畫面任何地方，開啟新訂單提示音。</p>
-    </div>
     <p id="who" class="muted text-sm"></p>
 
-    <nav class="tabs" role="tablist" aria-label="營運功能">
+    <nav class="tabs tabs--bar" role="tablist" aria-label="營運功能">
+      <span class="tabs__indicator" aria-hidden="true"></span>
       <button class="tab" role="tab" data-tab="board" aria-selected="true">
         <span class="material-symbols-rounded icon" aria-hidden="true">view_kanban</span><span class="tab__label" data-label="看板">看板</span>
         <span id="pending-count" class="count-dot is-empty">0</span>
@@ -115,7 +112,7 @@
           <div id="pos-later-fields" class="stack" hidden>
             <div class="name-row">
               <label class="field">
-                <span class="field__label">姓氏</span>
+                <span class="field__label">姓氏(選填)</span>
                 <input class="input input--surname" name="surname" maxlength="10">
               </label>
               <fieldset class="name-row__title">

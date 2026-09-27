@@ -6,6 +6,8 @@
   --color-primary: #ffc01a;         /* 品牌黃：按鈕、選取、進度條(只當色塊，上面的字用 --color-text，11.97:1) */
   --color-primary-hover: #f2b200;   /* 按鈕按下與滑過(10.42:1) */
   --color-primary-soft: #fff1c4;    /* 淡黃底：橫幅、提示區塊(17.41:1) */
+  --color-cream: #fff0d7;           /* 首頁底部面板(依設計稿) */
+  --color-primary-deep: #f2b200;    /* 較深的品牌橘黃：已完成的進度條、分頁指示線 */
   --color-text: #100b00;            /* 主要文字(對背景 19.55:1) */
   --color-text-muted: #5c5646;      /* 次要文字(7.27:1) */
   --color-control-border: #8a8472;  /* 輸入框、按鈕外框(3.72:1，符合元件 3:1) */
