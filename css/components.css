@@ -1157,108 +1157,160 @@ html.is-page-wait body {
   animation: spin 0.8s linear infinite;
 }
 
-/* ===== 首頁(依設計稿) ===== */
+/* ===== 首頁：直接使用設計圖(2160×3840)，按鈕依設計稿位置疊在圖上 ===== */
+.home-root,
 .home {
+  height: 100%;
+}
+
+/* 首頁不捲動，不需要預留捲軸空間(否則右側會留白、設計圖偏移) */
+.home-root {
+  scrollbar-gutter: auto;
+  overflow: hidden;
+}
+
+.home {
+  /* 設計圖顯示寬度：手機填滿寬度；畫面較寬時以高度為準，完整顯示不裁切 */
+  --w: min(100vw, calc(100dvh * 9 / 16));
+  --h: calc(var(--w) * 16 / 9);
   min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  background-color: var(--color-bg);
-  background-image: url('../assets/brand/star-pattern.png');
-  background-size: 80px 62px; /* 星星大小與密度對照設計稿 */
+  overflow: hidden;
+  background: #ffffff;
 }
 
-/* 外框只裁切左右，斜放的 logo 帶超出畫面的部分不會造成橫向捲動 */
-.home__band-wrap {
+/* 延伸底紋：圖磚取自設計圖，星星是斜向排列(每 876px 向右偏 60px)，
+   所以圖磚預先反向斜切，再用 skewX 還原，接縫處與設計圖完全吻合 */
+.home__pattern {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: -240px;
+  right: -240px;
+  --ox: calc(50vw - var(--w) / 2 + 240px);
+  --oy: calc(100dvh - var(--h));
+  background-image: url('../assets/brand/home-pattern.webp');
+  background-size: calc(var(--w) * 576 / 2160) calc(var(--w) * 876 / 2160);
+  background-position: var(--ox) var(--oy);
+  transform-origin: var(--ox) var(--oy);
+  transform: skewX(3.918deg);
+}
+
+.home__pattern--top {
+  background-image: url('../assets/brand/home-pattern-top.webp');
+}
+
+/* logo 帶的直線(設計圖 2160 寬座標)：上緣 y = 407.5 − 0.10633x，下緣 y = 1276 − 0.10633x，線寬 5
+   換算到畫面座標：Y = 圖上緣 + 縮放 × 截距 − 0.10633 × (X − 圖左緣) */
+.home {
+  --x0: calc(50vw - var(--w) / 2);
+  --y0: calc(100dvh - var(--h));
+}
+
+/* 上方圖層只出現在 logo 帶上緣以上 */
+.home__upper {
+  position: fixed;
+  inset: 0;
+  clip-path: polygon(0 0, 100% 0,
+    100% calc(var(--y0) + var(--w) * 407.5 / 2160 - 0.10633 * (100vw - var(--x0))),
+    0 calc(var(--y0) + var(--w) * 407.5 / 2160 + 0.10633 * var(--x0)));
+}
+
+.home__upper .home__pattern {
+  position: absolute;
+}
+
+/* logo 帶延伸到畫面兩側：黑色外層 + 白色內層 */
+.home__band-ext {
+  position: fixed;
+  inset: 0;
+}
+
+.home__band-ext--line {
+  background: var(--color-text);
+  clip-path: polygon(
+    0 calc(var(--y0) + var(--w) * 405 / 2160 + 0.10633 * var(--x0)),
+    100% calc(var(--y0) + var(--w) * 405 / 2160 - 0.10633 * (100vw - var(--x0))),
+    100% calc(var(--y0) + var(--w) * 1278.5 / 2160 - 0.10633 * (100vw - var(--x0))),
+    0 calc(var(--y0) + var(--w) * 1278.5 / 2160 + 0.10633 * var(--x0)));
+}
+
+.home__band-ext--fill {
+  background: #ffffff;
+  clip-path: polygon(
+    0 calc(var(--y0) + var(--w) * 410 / 2160 + 0.10633 * var(--x0)),
+    100% calc(var(--y0) + var(--w) * 410 / 2160 - 0.10633 * (100vw - var(--x0))),
+    100% calc(var(--y0) + var(--w) * 1273.5 / 2160 - 0.10633 * (100vw - var(--x0))),
+    0 calc(var(--y0) + var(--w) * 1273.5 / 2160 + 0.10633 * var(--x0)));
+}
+
+.home__art {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  width: var(--w);
+  height: var(--h);
+  transform: translateX(-50%);
+}
+
+.home__img {
+  display: block;
   width: 100%;
-  overflow-x: clip;
-  overflow-y: visible;
-  padding-top: clamp(40px, 9vh, 96px);
+  height: 100%;
 }
 
-/* 斜放的白色 logo 帶，左右延伸到畫面外 */
-.home__band {
-  width: 140%;
-  margin-left: -20%;
-  padding: clamp(20px, 5vw, 40px) 0;
-  background: var(--color-surface);
-  border-top: 2px solid var(--color-text);
-  border-bottom: 2px solid var(--color-text);
-  transform: rotate(-6deg);
+/* 按鈕區：設計稿量測值(1080 寬座標)x 91–989、y 1725–1847 */
+.home__slot {
+  position: absolute;
+  left: 8.426%;
+  top: 89.844%;
+  width: 83.241%;
+  height: 6.406%;
   display: flex;
+  align-items: center;
   justify-content: center;
+  gap: 0.3em;
+  margin: 0;
+  font-size: calc(var(--w) * 52 / 1080);
+  text-decoration: none;
+  color: var(--color-text);
 }
 
-.home__logo {
-  width: min(78vw, 480px);
-  height: auto;
-}
-
-.home__main {
-  flex: 1;
-  width: 100%;
-  max-width: var(--content-max);
-  margin: 0 auto;
-  padding: var(--space-6) var(--space-4) var(--space-4);
-}
-
-.home__bottom {
-  width: 100%;
-  max-width: var(--content-max);
-  margin: 0 auto;
-}
-
-.home__tagline {
-  text-align: right;
-  font-style: italic;
-  font-size: var(--text-xl);
-  line-height: 1.15;
-  padding: 0 var(--space-5) var(--space-4);
-}
-
-.home__sheet {
-  background: var(--color-cream);
-  border: 1px solid var(--color-text);
-  border-bottom: none;
-  border-radius: 28px 28px 0 0;
-  padding: var(--space-6) var(--space-5) calc(var(--space-6) + env(safe-area-inset-bottom));
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.home__title {
-  text-align: center;
-  font-size: clamp(1.5rem, 7vw, 2rem);
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0.04em;
-}
-
-/* 「開始」文字置中，箭頭固定在右側 */
 .home__start {
-  position: relative;
+  border: max(1px, calc(var(--w) * 2 / 1080)) solid var(--color-text);
+  border-radius: calc(var(--w) * 16 / 1080);
+  background: var(--color-primary);
+  font-family: 'Noto Sans TC', var(--font-sans);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
 }
 
+.home__start:active {
+  background: var(--color-primary-hover);
+}
+
+.home__start .display-no {
+  font-family: var(--font-sans);
+}
+
+/* 右側箭頭：比設計稿放大 1.5 倍，箭頭右緣維持在原稿位置(距按鈕右緣 68px，1080 寬座標) */
 .home__chevron {
   position: absolute;
-  right: var(--space-4);
+  right: calc(var(--w) * 11 / 1080);
   top: 50%;
-  margin-top: -12px;
+  --icon-weight: 600;
+  font-size: calc(var(--w) * 160 / 1080);
+  transform: translateY(-50%);
 }
 
-.home__msg {
+.home__closed {
+  font-size: calc(var(--w) * 40 / 1080);
+  color: var(--color-danger);
   text-align: center;
 }
 
-.home__msg--danger {
-  color: var(--color-danger);
-}
-
-.home__loading {
-  padding: var(--space-2);
-}
-
-.home__find {
-  align-self: center;
+.demo-bar {
+  position: relative;
+  z-index: 10;
 }
 
 @media (prefers-reduced-motion: reduce) {
