@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-Hant-TW">
+<html lang="zh-Hant-TW" class="home-root">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -21,43 +21,39 @@
 <script type="module" src="js/pages/entry.js"></script>
 </head>
 <body class="home">
-  <div class="home__band-wrap" role="banner">
-    <div class="home__band">
-      <img class="home__logo" src="assets/brand/logo-horizontal.png" alt="九愛！買 Tsiok ài bé" width="640" height="260">
+  <!-- 延伸區：設計圖以外的空間(較長手機的上方、電腦與平板的左右兩側)
+       設計稿中 logo 帶上方與下方的星星是兩個錯開的圖層，所以分別延伸，並把 logo 帶延長到畫面兩側 -->
+  <div class="home__pattern" aria-hidden="true"></div>
+  <div class="home__upper" aria-hidden="true"><div class="home__pattern home__pattern--top"></div></div>
+  <div class="home__band-ext home__band-ext--line" aria-hidden="true"></div>
+  <div class="home__band-ext home__band-ext--fill" aria-hidden="true"></div>
+
+  <div class="home__art">
+    <img class="home__img" src="assets/brand/home-design.webp" width="2160" height="3840"
+      alt="九愛！買 Tsiok ài bé。線上先點餐。就是快 Just Grab &amp; Go" decoding="async" fetchpriority="high">
+
+    <!-- 按鈕區：位置與大小依設計稿量測 -->
+    <div id="state-loading" class="home__slot home__slot--plain">
+      <span class="material-symbols-rounded icon spin" aria-hidden="true">progress_activity</span>
+      <span class="visually-hidden">載入中</span>
     </div>
-  </div>
+    <p id="state-closed" class="home__slot home__slot--plain home__closed" hidden>攤位目前暫停接受預點，請直接到攤位點餐</p>
+    <span id="state-active" hidden></span>
 
-  <main class="home__main">
-    <div id="banner" class="banner home__notice" hidden></div>
-  </main>
+    <button id="start-btn" class="home__slot home__start press" type="button" hidden>
+      開始
+      <span class="material-symbols-rounded icon home__chevron" aria-hidden="true">chevron_right</span>
+    </button>
+    <a id="active-link" class="home__slot home__start press" href="track.html" hidden>
+      查看訂單進度 <span id="active-no" class="display-no"></span>
+      <span class="material-symbols-rounded icon home__chevron" aria-hidden="true">chevron_right</span>
+    </a>
 
-  <div class="home__bottom">
-    <p class="home__tagline" lang="en">Just<br>Grab &amp; Go</p>
-    <section class="home__sheet" aria-labelledby="home-title">
-      <h1 id="home-title" class="home__title">線上先點餐。就是快</h1>
-
-      <div id="state-loading" class="loading home__loading">
-        <span class="material-symbols-rounded icon spin" aria-hidden="true">progress_activity</span>
-        <span>載入中</span>
-      </div>
-      <p id="state-closed" class="home__msg home__msg--danger" hidden>攤位目前暫停接受預點，請直接到攤位點餐。</p>
-      <p id="state-active" class="home__msg" hidden>你有一筆進行中的訂單，完成取餐後才能再預點。</p>
-
-      <button id="start-btn" class="btn btn--primary btn--lg btn--block home__start press" type="button" hidden>
-        開始
-        <span class="material-symbols-rounded icon home__chevron" aria-hidden="true">chevron_right</span>
-      </button>
-      <a id="active-link" class="btn btn--primary btn--lg btn--block home__start press" href="track.html" hidden>
-        查看訂單進度 <span id="active-no" class="display-no"></span>
-        <span class="material-symbols-rounded icon home__chevron" aria-hidden="true">chevron_right</span>
-      </a>
-
-      <!-- 找回訂單：功能保留，目前版本暫時隱藏(移除 hidden 即可恢復) -->
-      <a id="find-link" class="btn btn--ghost btn--sm home__find" href="track.html" hidden>
-        <span class="material-symbols-rounded icon icon--sm" aria-hidden="true">search</span>
-        找回我的訂單
-      </a>
-    </section>
+    <!-- 找回訂單：功能保留，目前版本暫時隱藏(移除 hidden 即可恢復) -->
+    <a id="find-link" class="btn btn--ghost btn--sm" href="track.html" hidden>
+      <span class="material-symbols-rounded icon icon--sm" aria-hidden="true">search</span>
+      找回我的訂單
+    </a>
   </div>
 </body>
 </html>
