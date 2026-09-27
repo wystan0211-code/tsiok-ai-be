@@ -1292,13 +1292,13 @@ html.is-page-wait body {
   font-family: var(--font-sans);
 }
 
-/* 右側箭頭：依設計稿大小與位置 */
+/* 右側箭頭：比設計稿放大 1.5 倍，箭頭右緣維持在原稿位置(距按鈕右緣 68px，1080 寬座標) */
 .home__chevron {
   position: absolute;
-  right: calc(var(--w) * 30 / 1080);
+  right: calc(var(--w) * 11 / 1080);
   top: 50%;
   --icon-weight: 600;
-  font-size: calc(var(--w) * 106 / 1080);
+  font-size: calc(var(--w) * 160 / 1080);
   transform: translateY(-50%);
 }
 
