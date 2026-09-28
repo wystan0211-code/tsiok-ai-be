@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,chevron_right,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,chevron_right,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,language,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/components.css">
@@ -99,6 +99,24 @@
           <span class="field__hint">{no} 會換成訂單編號，{surname} 會換成姓氏</span></label>
         <label class="field"><span class="field__label">個資同意文字(顧客送出前必須勾選)</span>
           <textarea class="textarea" name="consentText" maxlength="300" required></textarea></label>
+
+        <details class="tr-box">
+          <summary>英文與日文翻譯(顧客選擇英文或日文時顯示；儲存時自動翻譯，可手動修改)</summary>
+          <fieldset class="tr-box__lang">
+            <legend class="field__label">英文</legend>
+            <label class="field"><span class="field__hint">公告內容</span><input class="input" name="tr_en_bannerText" maxlength="200"></label>
+            <label class="field"><span class="field__hint">個資同意文字</span><textarea class="textarea" name="tr_en_consentText" maxlength="600"></textarea></label>
+            <label class="field"><span class="field__hint">常用訊息(一行一則，順序與中文相同)</span><textarea class="textarea" name="tr_en_messageTemplates"></textarea></label>
+            <label class="field"><span class="field__hint">簡訊範本(必須保留 {no}，可用 {surname})</span><textarea class="textarea" name="tr_en_smsTemplate" maxlength="400"></textarea></label>
+          </fieldset>
+          <fieldset class="tr-box__lang">
+            <legend class="field__label">日文</legend>
+            <label class="field"><span class="field__hint">公告內容</span><input class="input" name="tr_ja_bannerText" maxlength="200"></label>
+            <label class="field"><span class="field__hint">個資同意文字</span><textarea class="textarea" name="tr_ja_consentText" maxlength="600"></textarea></label>
+            <label class="field"><span class="field__hint">常用訊息(一行一則，順序與中文相同)</span><textarea class="textarea" name="tr_ja_messageTemplates"></textarea></label>
+            <label class="field"><span class="field__hint">簡訊範本(必須保留 {no}，可用 {surname})</span><textarea class="textarea" name="tr_ja_smsTemplate" maxlength="400"></textarea></label>
+          </fieldset>
+        </details>
 
         <p id="settings-note" class="muted text-sm"></p>
         <button class="btn btn--primary" type="submit">

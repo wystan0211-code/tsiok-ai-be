@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-Hant-TW">
+<html lang="zh-Hant-TW" data-i18n-page="on" data-i18n-title="order.title">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,chevron_right,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,chevron_right,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,language,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/components.css">
@@ -26,7 +26,7 @@
     <div class="topbar__inner">
       <img class="topbar__logo" src="assets/brand/logo-horizontal.png" alt="九愛！買" width="640" height="260">
       <span class="topbar__spacer"></span>
-      <a id="back-menu" class="btn btn--ghost btn--icon" href="#" aria-label="返回菜單" hidden>
+      <a id="back-menu" class="btn btn--ghost btn--icon" href="#" aria-label="返回菜單" data-i18n-aria="order.back" hidden>
         <span class="material-symbols-rounded icon" aria-hidden="true">arrow_back_ios_new</span>
       </a>
     </div>
@@ -36,21 +36,21 @@
     <div id="banner" class="banner" hidden></div>
     <section id="state-loading" class="loading">
       <span class="material-symbols-rounded icon spin" aria-hidden="true">progress_activity</span>
-      <span>載入中</span>
+      <span data-i18n="common.loading">載入中</span>
     </section>
 
     <section id="state-invalid" class="card stack" hidden>
       <div class="banner banner--danger">
         <span class="material-symbols-rounded icon" aria-hidden="true">link_off</span>
-        <p id="invalid-text">點餐連結已失效，請重新掃描攤位的 QR code。</p>
+        <p id="invalid-text" data-i18n="order.invalid">點餐連結已失效，請重新掃描攤位的 QR code。</p>
       </div>
-      <a id="invalid-action" class="btn btn--primary btn--block" href="index.html">回到入口</a>
+      <a id="invalid-action" class="btn btn--primary btn--block" href="index.html" data-i18n="order.toEntry">回到入口</a>
     </section>
 
     <section id="state-closed" class="card" hidden>
       <div class="banner banner--danger">
         <span class="material-symbols-rounded icon" aria-hidden="true">block</span>
-        <p>攤位目前暫停接受預點，請直接到攤位點餐。</p>
+        <p data-i18n="order.closed">攤位目前暫停接受預點，請直接到攤位點餐。</p>
       </div>
     </section>
 
@@ -60,34 +60,34 @@
 
     <section id="view-checkout" class="stack" hidden>
       <div class="card">
-        <h2 class="section-title">確認訂單</h2>
+        <h2 class="section-title" data-i18n="order.checkoutTitle">確認訂單</h2>
         <div id="cart-lines"></div>
         <div class="stack" style="margin-top:var(--space-3)">
-          <div class="summary-row"><span>數量</span><span id="cart-count"></span></div>
-          <div class="summary-row summary-row--total"><span>總金額</span><span id="cart-total"></span></div>
-          <p class="muted text-xs">請至攤位以園遊券付款</p>
+          <div class="summary-row"><span data-i18n="order.qty">數量</span><span id="cart-count"></span></div>
+          <div class="summary-row summary-row--total"><span data-i18n="order.total">總金額</span><span id="cart-total"></span></div>
+          <p class="muted text-xs" data-i18n="order.payNote">請至攤位以園遊券付款</p>
           <div id="limit-warning" class="banner banner--danger" hidden></div>
         </div>
       </div>
 
       <form id="checkout-form" class="card stack" novalidate>
-        <h2 class="section-title">取餐聯絡資料</h2>
+        <h2 class="section-title" data-i18n="order.contactTitle">取餐聯絡資料</h2>
         <div class="name-row">
           <label class="field">
-            <span class="field__label">姓氏</span>
+            <span class="field__label" data-i18n="order.surname">姓氏</span>
             <input class="input input--surname" name="surname" maxlength="10" autocomplete="family-name" required>
           </label>
           <fieldset class="name-row__title">
-            <legend class="visually-hidden">稱謂</legend>
+            <legend class="visually-hidden" data-i18n="order.titleLegend">稱謂</legend>
             <div class="radio-group">
-            <label class="radio-chip"><input type="radio" name="title" value="先生" required><span>先生</span></label>
-            <label class="radio-chip"><input type="radio" name="title" value="小姐"><span>小姐</span></label>
-            <label class="radio-chip"><input type="radio" name="title" value="其他"><span>其他</span></label>
+            <label class="radio-chip"><input type="radio" name="title" value="先生" required><span data-i18n="title.先生">先生</span></label>
+            <label class="radio-chip"><input type="radio" name="title" value="小姐"><span data-i18n="title.小姐">小姐</span></label>
+            <label class="radio-chip"><input type="radio" name="title" value="其他"><span data-i18n="title.其他">其他</span></label>
             </div>
           </fieldset>
         </div>
         <label class="field">
-          <span class="field__label">手機號碼</span>
+          <span class="field__label" data-i18n="order.phone">手機號碼</span>
           <input class="input" name="phone" type="tel" inputmode="numeric" maxlength="12" autocomplete="tel" required placeholder="09xxxxxxxx">
         </label>
         <label class="check">
@@ -97,7 +97,7 @@
         <p id="form-error" class="banner banner--danger" hidden></p>
         <button id="submit-btn" class="btn btn--primary btn--lg btn--block" type="submit">
           <span class="material-symbols-rounded icon" aria-hidden="true">send</span>
-          送出訂單
+          <span data-i18n="order.submit">送出訂單</span>
         </button>
       </form>
     </section>

@@ -6,11 +6,14 @@ import {
 import { errorText } from '../core/errors.js';
 import { store } from '../core/storage.js';
 import {
-  escapeHtml, money, time, dateTime, STATUS_LABEL,
+  escapeHtml, money, time, dateTime,
 } from '../core/format.js';
 import {
-  displayLines, displayTotal, estimateReadyAt, isFinal, lineLabel, normalizePhone, isValidPhone,
+  displayLines, displayTotal, estimateReadyAt, isFinal, normalizePhone, isValidPhone,
 } from '../core/order-logic.js';
+import {
+  t, getLang, itemText, optionText, totalMoney, withOption,
+} from '../core/i18n.js';
 import { beep, vibrate, unlockAudio } from '../core/sound.js';
 import { goTo, pageReady } from '../core/transition.js';
 
@@ -21,7 +24,6 @@ showDemoBanner(IS_DEMO);
 const params = new URLSearchParams(location.search);
 const orderId = params.get('o');
 const HISTORY_KEY = 'tab-history';
-const baseTitle = document.title;
 
 let uid = null;
 let order = null;
@@ -55,14 +57,14 @@ $('#find-form').addEventListener('submit', (e) => {
     const no = form.no.value.trim().toUpperCase();
     const phone = normalizePhone(form.phone.value);
     if (!/^[AB]\d{3,}$/.test(no) || !isValidPhone(phone)) {
-      err.textContent = '請輸入正確的訂單編號(例如 A012)與手機號碼。';
+      err.textContent = t('track.findErr');
       err.hidden = false;
       return;
     }
     try {
       const id = await api.findOrder(no, phone);
       if (!id) {
-        err.textContent = '找不到符合的訂單，請確認編號與電話。';
+        err.textContent = t('track.noMatch');
         err.hidden = false;
         return;
       }
@@ -75,9 +77,9 @@ $('#find-form').addEventListener('submit', (e) => {
 });
 
 // ===== 訂單進度 =====
-const STEP_NAMES = {
-  preorder: ['已送出', '製作中', '可取餐', '已取餐'],
-  walkin: ['已付款', '製作中', '可取餐', '已取餐'],
+const STEP_KEYS = {
+  preorder: ['step.sent', 'step.making', 'step.ready', 'step.picked'],
+  walkin: ['step.paid', 'step.making', 'step.ready', 'step.picked'],
 };
 const STEP_INDEX = { pending: 0, accepted: 1, ready: 2, picked: 3 };
 
@@ -98,28 +100,28 @@ function renderNotify() {
   }
   box.hidden = false;
   if (order.pushEnabled) {
-    box.innerHTML = `<p class="row">${icon('notifications_active')}<strong>已開啟取餐通知</strong></p>`;
+    box.innerHTML = `<p class="row">${icon('notifications_active')}<strong>${t('track.pushOn')}</strong></p>`;
     return;
   }
   if (IS_DEMO) {
-    box.innerHTML = `<p class="row">${icon('notifications')}<strong>取餐通知</strong></p><p class="muted text-sm">展示模式不支援推播。</p>`;
+    box.innerHTML = `<p class="row">${icon('notifications')}<strong>${t('track.pushTitle')}</strong></p><p class="muted text-sm">${t('track.pushDemo')}</p>`;
     return;
   }
   if (isIOS() && !isStandalone()) {
     box.innerHTML = `
-      <p class="row">${icon('notifications')}<strong>iPhone 開啟取餐通知</strong></p>
-      <p class="text-sm">iPhone 需要先把網頁加入主畫面才能收到通知：點 Safari 下方的分享按鈕，選「加入主畫面」，再從主畫面開啟「九愛！買」，回到這個頁面按「開啟取餐通知」。</p>
+      <p class="row">${icon('notifications')}<strong>${t('track.iosTitle')}</strong></p>
+      <p class="text-sm">${escapeHtml(t('track.iosBody'))}</p>
       `;
     return;
   }
   box.innerHTML = `
-    <p class="row">${icon('notifications')}<strong>餐點完成時通知我</strong></p>
-    <button id="push-btn" class="btn btn--primary btn--block" type="button">${icon('notifications_active')}開啟取餐通知</button>
+    <p class="row">${icon('notifications')}<strong>${t('track.notifyMe')}</strong></p>
+    <button id="push-btn" class="btn btn--primary btn--block" type="button">${icon('notifications_active')}${t('track.enablePush')}</button>
     `;
   $('#push-btn').addEventListener('click', (e) => withBusy(e.currentTarget, async () => {
     try {
       await api.enablePush(order.id);
-      toast('已開啟取餐通知', 'success');
+      toast(t('track.pushOn'), 'success');
     } catch (err) {
       toast(errorText(err), 'danger', 5000);
     }
@@ -130,35 +132,36 @@ function renderOrder() {
   show('order');
   const type = order.type === 'walkin' ? 'walkin' : 'preorder';
   $('#o-no').textContent = order.no;
-  $('#o-status').textContent = STATUS_LABEL[order.status] || order.status;
-  document.title = order.status === 'ready' ? `【可取餐】${order.no}｜九愛！買` : baseTitle;
+  $('#o-status').textContent = t(`status.${order.status}`);
+  document.title = order.status === 'ready' ? t('track.docReady', { no: order.no }) : t('track.title');
 
   // 預估時間與說明
   let eta = '';
-  if (order.status === 'pending') eta = '等待攤位確認訂單';
+  if (order.status === 'pending') eta = t('track.etaPending');
   if (order.status === 'accepted') {
     const at = estimateReadyAt(order, itemsById);
     if (at) {
       const mins = Math.ceil((at - Date.now()) / 60000);
-      eta = mins > 0 ? `預計 ${time(at)} 完成(約 ${mins} 分鐘)` : '即將完成，請留意通知';
-    } else eta = '攤位製作中';
+      eta = mins > 0 ? t('track.eta', { time: time(at), min: mins }) : t('track.etaSoon');
+    } else eta = t('track.etaMaking');
   }
-  if (order.status === 'ready') eta = '請到攤位出示訂單編號取餐';
-  if (order.status === 'picked') eta = `已於 ${time(order.pickedAt)} 取餐，謝謝光臨`;
+  if (order.status === 'ready') eta = t('track.etaReady');
+  if (order.status === 'picked') eta = t('track.etaPicked', { time: time(order.pickedAt) });
   $('#o-eta').textContent = eta;
 
   // 進度條(狀態沒變時不重畫，避免動畫重播)
   const steps = $('#o-steps');
   const idx = STEP_INDEX[order.status];
   steps.hidden = idx == null;
-  const stepsKey = `${type}:${order.status}`;
+  const stepsKey = `${type}:${order.status}:${getLang()}`;
   if (steps.dataset.key !== stepsKey) {
     steps.dataset.key = stepsKey;
     const complete = order.status === 'picked';
     steps.classList.toggle('steps--complete', complete);
     steps.innerHTML = complete
-      ? '<li class="step step--complete"><span class="step__bar"></span><span class="visually-hidden">已取餐</span></li>'
-      : STEP_NAMES[type].map((name, i) => {
+      ? `<li class="step step--complete"><span class="step__bar"></span><span class="visually-hidden">${t('step.picked')}</span></li>`
+      : STEP_KEYS[type].map((key, i) => {
+        const name = t(key);
         let cls = '';
         if (idx != null && i < idx) cls = 'step--done';
         else if (i === idx) cls = 'step--current';
@@ -169,11 +172,13 @@ function renderOrder() {
   // 特殊狀態提示
   const alertBox = $('#o-alert');
   if (order.status === 'rejected') {
-    alertBox.innerHTML = `<div class="banner banner--danger">${icon('error')}<div><p><strong>攤位未接受這筆訂單</strong></p>${order.rejectReason ? `<p>原因：${escapeHtml(order.rejectReason)}</p>` : ''}<p>歡迎直接到攤位點餐。</p></div></div>`;
+    // 拒絕原因：顧客選英日文時顯示攤位送出時翻譯好的版本
+    const reason = getLang() !== 'zh-Hant' && order.rejectReasonTr ? order.rejectReasonTr : order.rejectReason;
+    alertBox.innerHTML = `<div class="banner banner--danger">${icon('error')}<div><p><strong>${t('track.rejTitle')}</strong></p>${reason ? `<p>${escapeHtml(t('track.rejReason', { r: reason }))}</p>` : ''}<p>${t('track.rejHint')}</p></div></div>`;
   } else if (order.status === 'cancelled') {
-    alertBox.innerHTML = `<div class="banner">${icon('info')}<p>訂單已取消。</p></div>`;
+    alertBox.innerHTML = `<div class="banner">${icon('info')}<p>${t('track.cancelled')}</p></div>`;
   } else if (order.status === 'ready') {
-    alertBox.innerHTML = `<div class="banner">${icon('notifications_active')}<p><strong>餐點已完成！</strong>請到攤位出示編號 ${escapeHtml(order.no)} 取餐。</p></div>`;
+    alertBox.innerHTML = `<div class="banner">${icon('notifications_active')}<p><strong>${t('track.readyStrong')}</strong> ${escapeHtml(t('track.readyBody', { no: order.no }))}</p></div>`;
   } else alertBox.innerHTML = '';
 
   renderNotify();
@@ -182,17 +187,30 @@ function renderOrder() {
   const messages = order.messages || [];
   $('#o-messages-box').hidden = messages.length === 0;
   $('#o-messages').innerHTML = messages.slice().reverse().map((m) => `
-    <div class="message"><p>${escapeHtml(m.text)}</p><p class="muted text-sm">${time(m.at)}</p></div>`).join('');
+    <div class="message"><p>${escapeHtml(messageText(m))}</p><p class="muted text-sm">${time(m.at)}</p></div>`).join('');
 
   // 明細
   const lines = displayLines(order, itemsById);
   $('#o-lines').innerHTML = lines.map((l) => `
-    <div class="summary-row"><span>${escapeHtml(lineLabel(l))} × ${l.qty}</span><span>${money(l.subtotal)}</span></div>`).join('');
-  $('#o-total').textContent = money(displayTotal(order, itemsById));
-  $('#o-time').innerHTML = `<p>送出時間 ${dateTime(order.createdAt)}</p>${order.establishedAt ? `<p>確立時間 ${dateTime(order.establishedAt)}</p>` : ''}`;
+    <div class="summary-row"><span>${escapeHtml(localLineLabel(l))} × ${l.qty}</span><span>${money(l.subtotal)}</span></div>`).join('');
+  $('#o-total').textContent = totalMoney(displayTotal(order, itemsById));
+  $('#o-time').innerHTML = `<p>${escapeHtml(t('track.sentAt', { t: dateTime(order.createdAt) }))}</p>${order.establishedAt ? `<p>${escapeHtml(t('track.confirmedAt', { t: dateTime(order.establishedAt) }))}</p>` : ''}`;
 
   $('#o-cancel').hidden = !canCancel();
   $('#o-again').hidden = !isFinal(order);
+}
+
+// 品項名稱與口味依語言顯示(訂單內存的是中文)
+function localLineLabel(l) {
+  const item = itemsById[l.itemId];
+  const name = item ? itemText(item).name : l.name;
+  const opt = item ? optionText(item, l.option) : l.option;
+  return withOption(name, opt);
+}
+
+// 攤位訊息：有翻譯時顯示翻譯
+function messageText(m) {
+  return getLang() !== 'zh-Hant' && m.tr ? m.tr : m.text;
 }
 
 // 本人、等待接單中、送出 3 分鐘內才顯示取消按鈕
@@ -208,14 +226,14 @@ function notifyChanges() {
     if (order.status === 'ready') {
       beep(3);
       vibrate([300, 150, 300, 150, 300]);
-      toast('餐點已完成，請到攤位取餐！', 'success', 6000);
-      showLocalNotification('餐點已完成', `訂單 ${order.no} 可以取餐了`);
+      toast(t('track.readyToast'), 'success', 6000);
+      showLocalNotification(t('track.notiTitle'), t('track.notiBody', { no: order.no }));
     } else if (order.status === 'accepted') {
       beep(1);
-      toast('攤位已接單，開始製作');
+      toast(t('track.acceptedToast'));
     } else if (order.status === 'rejected') {
       beep(1);
-      toast('攤位未接受這筆訂單', 'danger');
+      toast(t('track.rejTitle'), 'danger');
     }
   }
   const before = prevOrder.messages?.length || 0;
@@ -223,7 +241,7 @@ function notifyChanges() {
   if (after > before) {
     beep(2);
     vibrate();
-    toast(`攤位訊息：${order.messages[after - 1].text}`, 'info', 6000);
+    toast(t('track.messageToast', { text: messageText(order.messages[after - 1]) }), 'info', 6000);
   }
 }
 
@@ -239,15 +257,17 @@ async function showLocalNotification(title, body) {
 }
 
 $('#o-cancel').addEventListener('click', async (e) => {
-  const ok = await confirmDialog('取消訂單', '確定要取消這筆訂單嗎？', { confirmLabel: '取消訂單', danger: true, solid: true });
+  const ok = await confirmDialog(t('track.cancelBtn'), t('track.cancelConfirm'), {
+    confirmLabel: t('track.cancelBtn'), cancelLabel: t('track.cancelKeep'), danger: true, solid: true,
+  });
   if (!ok) return;
   withBusy(e.currentTarget, async () => {
     try {
       await api.cancelOrder(order.id);
-      toast('訂單已取消');
+      toast(t('track.cancelledToast'));
     } catch (err) {
       // 超過可取消時間或攤位已接單時，安全規則會拒絕
-      toast(err.code === 'permission' || err.code === 'bad-state' ? '目前無法取消，請至攤位洽詢。' : errorText(err), 'danger');
+      toast(err.code === 'permission' || err.code === 'bad-state' ? t('track.cancelFail') : errorText(err), 'danger');
     }
   });
 });
@@ -285,7 +305,7 @@ async function init() {
     history.replaceState(null, '', `track.html?${params}`);
   }
   if (params.get('new') === '1') {
-    toast('訂單已送出，等待攤位接單', 'success');
+    toast(t('track.sentToast'), 'success');
     params.delete('new');
     history.replaceState(null, '', `track.html?${params}`);
   }
@@ -299,7 +319,7 @@ async function init() {
     if (!o) {
       show('find');
       renderHistory();
-      $('#find-error').textContent = '找不到這筆訂單，請輸入編號與電話查詢。';
+      $('#find-error').textContent = t('track.notFound');
       $('#find-error').hidden = false;
       pageReady();
       return;

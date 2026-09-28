@@ -1,5 +1,7 @@
 // 顧客端換頁等待畫面：往前換頁時顯示旋轉圓圈，新頁面資料準備好才消失
 // 只在顧客端使用；攤位與後台不引入這個模組
+import { t } from './i18n.js';
+
 const KEY = 'tab-page-wait';
 const MIN_MS = 600; // 從按下到新頁面顯示，至少 0.6 秒，避免一閃而過
 
@@ -8,7 +10,7 @@ function showOverlay() {
   const el = document.createElement('div');
   el.className = 'page-wait';
   el.setAttribute('role', 'status');
-  el.innerHTML = '<span class="page-wait__ring" aria-hidden="true"></span><span>載入中</span>';
+  el.innerHTML = `<span class="page-wait__ring" aria-hidden="true"></span><span>${t('common.loading')}</span>`;
   document.body.append(el);
 }
 

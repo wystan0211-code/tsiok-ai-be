@@ -38,27 +38,31 @@ export function priceLines(lines, itemsById) {
   return { lines: out, total: out.reduce((s, l) => s + l.subtotal, 0), missing };
 }
 
-// 檢查品項是否仍可供應，回傳無法供應的說明文字陣列
-export function stockProblems(lines, itemsById) {
+// 檢查品項是否仍可供應，回傳 [{ item, kind: 'deleted'|'inactive'|'soldout'|'short', left }]
+export function stockIssues(lines, itemsById) {
   const need = {};
   for (const l of lines) need[l.itemId] = (need[l.itemId] || 0) + l.qty;
-  const problems = [];
+  const issues = [];
   for (const [id, qty] of Object.entries(need)) {
     const item = itemsById[id];
-    if (!item || !item.active) {
-      problems.push(item ? `${item.name}(已下架)` : '已刪除的品項');
-      continue;
-    }
-    if (item.soldOut) {
-      problems.push(`${item.name}(已售完)`);
-      continue;
-    }
-    if (item.stockLimit != null && (item.soldCount || 0) + qty > item.stockLimit) {
-      const left = Math.max(0, item.stockLimit - (item.soldCount || 0));
-      problems.push(`${item.name}(剩 ${left} 份)`);
+    if (!item) issues.push({ item: null, kind: 'deleted' });
+    else if (!item.active) issues.push({ item, kind: 'inactive' });
+    else if (item.soldOut) issues.push({ item, kind: 'soldout' });
+    else if (item.stockLimit != null && (item.soldCount || 0) + qty > item.stockLimit) {
+      issues.push({ item, kind: 'short', left: Math.max(0, item.stockLimit - (item.soldCount || 0)) });
     }
   }
-  return problems;
+  return issues;
+}
+
+// 中文說明文字(攤位與後台使用)
+export function stockProblems(lines, itemsById) {
+  return stockIssues(lines, itemsById).map(({ item, kind, left }) => {
+    if (kind === 'deleted') return '已刪除的品項';
+    if (kind === 'inactive') return `${item.name}(已下架)`;
+    if (kind === 'soldout') return `${item.name}(已售完)`;
+    return `${item.name}(剩 ${left} 份)`;
+  });
 }
 
 // 計算接單或現場點餐後的庫存變化：回傳 { 品項ID: { soldCount, soldOut } }

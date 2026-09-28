@@ -7,9 +7,12 @@ import { errorText } from '../core/errors.js';
 import { store } from '../core/storage.js';
 import { escapeHtml, money, personName, TITLES } from '../core/format.js';
 import {
-  countItems, priceLines, stockProblems, summarizeLines, normalizePhone, isValidPhone,
+  countItems, priceLines, stockIssues, summarizeLines, normalizePhone, isValidPhone,
 } from '../core/order-logic.js';
 import { goTo, pageReady } from '../core/transition.js';
+import {
+  t, getLang, itemCount, totalMoney, itemText, optionText, settingText, withOption,
+} from '../core/i18n.js';
 
 showDemoBanner(IS_DEMO);
 
@@ -71,8 +74,9 @@ function currentView() {
 function render() {
   if (!ready || !settings) return;
   const banner = $('#banner');
-  banner.hidden = !(settings.bannerActive && settings.bannerText);
-  banner.innerHTML = `${icon('campaign')}<p>${escapeHtml(settings.bannerText)}</p>`;
+  const bannerText = settingText(settings, 'bannerText');
+  banner.hidden = !(settings.bannerActive && bannerText);
+  banner.innerHTML = `${icon('campaign')}<p>${escapeHtml(bannerText)}</p>`;
 
   if (!settings.acceptingPreorders) {
     showState('closed');
@@ -93,40 +97,42 @@ function render() {
 function renderMenu() {
   const list = $('#menu-list');
   if (!menu.length) {
-    list.innerHTML = '<p class="empty">目前沒有上架的品項</p>';
+    list.innerHTML = `<p class="empty">${t('order.emptyMenu')}</p>`;
     return;
   }
   list.innerHTML = menu.map((item) => {
     const qty = qtyOf(item.id);
+    const tx = itemText(item);
+    const name = escapeHtml(tx.name);
     const left = item.stockLimit != null ? Math.max(0, item.stockLimit - (item.soldCount || 0)) : null;
     const soldOut = item.soldOut || left === 0;
     const img = images[item.id]
       ? `<img class="menu-item__img" src="${images[item.id]}" alt="" loading="lazy">`
       : `<div class="menu-item__img">${icon('restaurant')}</div>`;
     let control;
-    if (soldOut) control = '<span class="badge badge--danger">已售完</span>';
+    if (soldOut) control = `<span class="badge badge--danger">${t('order.soldOut')}</span>`;
     else if (item.options?.length) {
       // 有選項的品項：加號開啟選項視窗，旁邊顯示已加入的數量
-      control = `${qty ? `<span class="muted text-sm" aria-label="已加入 ${qty} 份">×${qty}</span>` : ''}
-        <button type="button" class="btn-add press" data-action="choose" data-id="${item.id}" aria-label="加入 ${escapeHtml(item.name)}">${icon('add')}</button>`;
+      control = `${qty ? `<span class="muted text-sm" aria-label="${t('order.addedCount', { n: qty })}">×${qty}</span>` : ''}
+        <button type="button" class="btn-add press" data-action="choose" data-id="${item.id}" aria-label="${t('order.add', { name })}">${icon('add')}</button>`;
     } else if (qty) {
       control = `<div class="stepper">
-          <button type="button" class="press" data-action="minus" data-id="${item.id}" aria-label="減少 ${escapeHtml(item.name)}">${icon('remove', 'icon--sm')}</button>
+          <button type="button" class="press" data-action="minus" data-id="${item.id}" aria-label="${t('order.decrease', { name })}">${icon('remove', 'icon--sm')}</button>
           <span class="stepper__value" aria-live="polite">${qty}</span>
-          <button type="button" class="press" data-action="plus" data-id="${item.id}" aria-label="增加 ${escapeHtml(item.name)}">${icon('add', 'icon--sm')}</button>
+          <button type="button" class="press" data-action="plus" data-id="${item.id}" aria-label="${t('order.increase', { name })}">${icon('add', 'icon--sm')}</button>
         </div>`;
     } else {
-      control = `<button type="button" class="btn-add press" data-action="plus" data-id="${item.id}" aria-label="加入 ${escapeHtml(item.name)}">${icon('add')}</button>`;
+      control = `<button type="button" class="btn-add press" data-action="plus" data-id="${item.id}" aria-label="${t('order.add', { name })}">${icon('add')}</button>`;
     }
     const showLeft = settings.showStockLeft !== false && left != null && left > 0 && left <= 10;
     return `<article class="menu-item ${soldOut ? 'menu-item--soldout' : ''}">
       ${img}
       <div class="menu-item__body">
-        <h3 class="menu-item__name">${escapeHtml(item.name)}</h3>
-        ${item.description ? `<p class="menu-item__desc">${escapeHtml(item.description)}</p>` : ''}
+        <h3 class="menu-item__name">${name}</h3>
+        ${tx.description ? `<p class="menu-item__desc">${escapeHtml(tx.description)}</p>` : ''}
         <p class="row text-sm muted">
-          ${item.prepMinutes ? `<span class="row" style="gap:2px">${icon('schedule', 'icon--sm')}約 ${item.prepMinutes} 分鐘</span>` : ''}
-          ${showLeft ? `<span class="badge badge--warning">剩 ${left} 份</span>` : ''}
+          ${item.prepMinutes ? `<span class="row" style="gap:2px">${icon('schedule', 'icon--sm')}${t('order.prep', { n: item.prepMinutes })}</span>` : ''}
+          ${showLeft ? `<span class="badge badge--warning">${t('order.left', { n: left })}</span>` : ''}
         </p>
         <div class="menu-item__foot">
           <span class="menu-item__price">${money(item.price)}</span>
@@ -141,7 +147,7 @@ function renderCartBar(view) {
   const count = countItems(cart.lines);
   const { total } = priceLines(cart.lines, itemsById());
   $('#cart-bar').hidden = view !== 'menu' || count === 0;
-  $('#cart-bar-text').textContent = `查看訂單 · ${count} 件 · ${money(total)}`;
+  $('#cart-bar-text').textContent = t('order.cartBar', { count: itemCount(count), total: money(total) });
 }
 
 function renderCheckout() {
@@ -152,24 +158,29 @@ function renderCheckout() {
   $('#cart-lines').innerHTML = cart.lines.map((l, i) => {
     const item = map[l.itemId];
     if (!item) return '';
+    const name = itemText(item).name;
+    const opt = optionText(item, l.option);
+    // 口味以較淡的字顯示在名稱後面
+    const optText = opt ? withOption(name, opt).slice(name.length) : '';
     return `<div class="cart-line">
       <div class="cart-line__name">
-        <div>${escapeHtml(item.name)}${l.option ? `<span class="muted">(${escapeHtml(l.option)})</span>` : ''}</div>
+        <div>${escapeHtml(name)}${optText ? `<span class="muted">${escapeHtml(optText)}</span>` : ''}</div>
         <div class="muted text-xs">${money(item.price)} × ${l.qty} = ${money(item.price * l.qty)}</div>
       </div>
       <div class="stepper">
-        <button type="button" class="press" data-action="line-minus" data-index="${i}" aria-label="減少">${icon(l.qty === 1 ? 'delete' : 'remove', 'icon--sm')}</button>
+        <button type="button" class="press" data-action="line-minus" data-index="${i}" aria-label="${t('order.decreaseShort')}">${icon(l.qty === 1 ? 'delete' : 'remove', 'icon--sm')}</button>
         <span class="stepper__value">${l.qty}</span>
-        <button type="button" class="press" data-action="line-plus" data-index="${i}" aria-label="增加">${icon('add', 'icon--sm')}</button>
+        <button type="button" class="press" data-action="line-plus" data-index="${i}" aria-label="${t('order.increaseShort')}">${icon('add', 'icon--sm')}</button>
       </div>
     </div>`;
   }).join('');
-  $('#cart-count').textContent = `${count} 件`;
-  $('#cart-total').textContent = money(priced.total);
+  $('#cart-count').textContent = itemCount(count);
+  // 總金額：英日文前面標示 NTD
+  $('#cart-total').textContent = totalMoney(priced.total);
   const warn = $('#limit-warning');
   warn.hidden = count <= max;
-  warn.innerHTML = `${icon('warning')}<p>為了避免惡意棄單，如欲購買大量請至攤位。</p>`;
-  $('#consent-text').textContent = settings.consentText;
+  warn.innerHTML = `${icon('warning')}<p>${t('order.limitWarn')}</p>`;
+  $('#consent-text').textContent = settingText(settings, 'consentText');
 }
 
 // ===== 互動 =====
@@ -190,25 +201,27 @@ document.addEventListener('click', async (e) => {
 async function chooseOption(itemId) {
   const item = itemsById()[itemId];
   if (!item) return;
+  const name = itemText(item).name;
   const { value, data } = await openDialog({
-    title: item.name,
+    title: name,
     body: `
       <fieldset class="field" style="border:none;padding:0;margin:0">
-        <legend class="field__label">口味 / 選項</legend>
+        <legend class="field__label">${t('order.optionLegend')}</legend>
         <div class="radio-group">
-          ${item.options.map((opt, i) => `<label class="radio-chip"><input type="radio" name="option" value="${escapeHtml(opt)}" ${i === 0 ? 'checked' : ''}><span>${escapeHtml(opt)}</span></label>`).join('')}
+          ${item.options.map((opt, i) => `<label class="radio-chip"><input type="radio" name="option" value="${escapeHtml(opt)}" ${i === 0 ? 'checked' : ''}><span>${escapeHtml(optionText(item, opt))}</span></label>`).join('')}
         </div>
       </fieldset>
       <label class="field">
-        <span class="field__label">數量</span>
+        <span class="field__label">${t('order.qty')}</span>
         <input class="input" type="number" name="qty" min="1" max="${settings.maxItemsPerOrder}" value="1" required>
       </label>`,
-    actions: [{ label: '加入', value: 'add' }],
+    actions: [{ label: t('order.addBtn'), value: 'add' }],
   });
   if (value !== 'add') return;
   const qty = Math.max(1, Math.min(settings.maxItemsPerOrder, Number(data.get('qty')) || 1));
+  const opt = optionText(item, data.get('option'));
   addToCart(itemId, data.get('option'), qty);
-  toast(`已加入 ${item.name}(${data.get('option')})×${qty}`);
+  toast(t('order.addedToast', { item: withOption(name, opt), qty }));
 }
 
 $('#back-menu').addEventListener('click', (e) => {
@@ -244,14 +257,14 @@ async function submit() {
   const surname = form.surname.value.trim();
   const title = form.elements.title.value;
   const phone = normalizePhone(form.phone.value);
-  if (!surname) return formError('請填寫姓氏。');
-  if (!TITLES.includes(title)) return formError('請選擇稱謂。');
-  if (!isValidPhone(phone)) return formError('手機號碼格式不正確，請輸入 09 開頭的 10 碼號碼。');
-  if (!form.consent.checked) return formError('請勾選同意取餐通知。');
+  if (!surname) return formError(t('order.errSurname'));
+  if (!TITLES.includes(title)) return formError(t('order.errTitle'));
+  if (!isValidPhone(phone)) return formError(t('order.errPhone'));
+  if (!form.consent.checked) return formError(t('order.errConsent'));
 
   const map = itemsById();
   const count = countItems(cart.lines);
-  if (!count) return formError('購物車是空的。');
+  if (!count) return formError(t('order.errEmpty'));
 
   // 超過上限：自動拒絕並通知攤位收件匣
   if (count > settings.maxItemsPerOrder) {
@@ -261,16 +274,21 @@ async function submit() {
     } catch (err) {
       console.warn(err);
     }
-    await alertDialog('訂單未送出', `單筆預點最多 ${settings.maxItemsPerOrder} 件，你選了 ${count} 件，系統已自動拒絕並通知攤位。請直接到攤位點餐。`);
+    await alertDialog(t('order.overTitle'), t('order.overMsg', { max: settings.maxItemsPerOrder, count }));
     return undefined;
   }
 
-  const problems = stockProblems(cart.lines, map);
-  if (problems.length) return formError(`無法供應：${problems.join('、')}`);
+  const issues = stockIssues(cart.lines, map);
+  if (issues.length) {
+    const list = issues.map(({ item, kind, left }) => (kind === 'deleted'
+      ? t('stock.deleted')
+      : t(`stock.${kind}`, { name: itemText(item).name, n: left }))).join(getLang() === 'en' ? ', ' : '、');
+    return formError(t('order.unavailable', { list }));
+  }
 
   try {
     const { orderId, no } = await api.submitPreorder({
-      lines: cart.lines, surname, title, phone, consentText: settings.consentText,
+      lines: cart.lines, surname, title, phone, lang: getLang(), consentText: settingText(settings, 'consentText'),
     });
     const history = store.get(HISTORY_KEY, []);
     history.unshift({ orderId, no, at: Date.now() });
@@ -302,8 +320,8 @@ async function init() {
       showState('invalid');
       pageReady();
       if (check.reason === 'used' && check.orderId) {
-        $('#invalid-text').textContent = '這個點餐連結已經送出過訂單。';
-        $('#invalid-action').textContent = '查看訂單進度';
+        $('#invalid-text').textContent = t('order.invalidUsed');
+        $('#invalid-action').textContent = t('home.viewOrder');
         $('#invalid-action').href = `track.html?o=${encodeURIComponent(check.orderId)}`;
       }
       return;

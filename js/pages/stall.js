@@ -15,6 +15,23 @@ import {
 } from '../core/order-logic.js';
 import { beep, unlockAudio } from '../core/sound.js';
 import { qrSvg } from '../core/qr.js';
+import { personNameFor } from '../core/i18n.js';
+import { DEFAULT_SETTINGS } from '../core/defaults.js';
+
+const LANG_BADGE = { en: 'EN', ja: '日' };
+// 固定的拒絕原因直接對照翻譯，不必呼叫翻譯服務
+const REJECT_TR = {
+  品項售完: { en: 'An item is sold out', ja: '商品が売り切れのため' },
+  '攤位忙碌，請直接到攤位點餐': { en: 'The stall is busy. Please order at the stall.', ja: '屋台が混み合っているため、屋台で直接ご注文ください' },
+  即將收攤: { en: 'The stall is closing soon', ja: 'まもなく閉店のため' },
+};
+
+// 翻譯成顧客的語言；中文顧客或翻譯失敗時回傳空字串(顧客端會改顯示中文原文)
+async function translateFor(lang, text) {
+  if (!text || !lang || lang === 'zh-Hant') return '';
+  const res = await api.translate([text], [lang]);
+  return res?.[lang]?.[0] || '';
+}
 
 showDemoBanner(IS_DEMO);
 
@@ -34,6 +51,9 @@ let pos = store.get(POS_KEY, { lines: [], mode: 'now', payment: '園遊券' });
 let findMode = 'no';
 
 const itemsById = () => Object.fromEntries(menu.map((i) => [i.id, i]));
+const paymentMethods = () => settings?.paymentMethods?.length ? settings.paymentMethods : ['園遊券', '現金'];
+// 只設定一種付款方式時，不需要顯示或選擇付款方式
+const singlePayment = () => paymentMethods().length === 1;
 const byId = (id) => orders.find((o) => o.id === id);
 
 // ===== 分頁 =====
@@ -64,9 +84,10 @@ function cardHtml(o, forceOpen = false) {
   const badges = [
     `<span class="badge ${o.type === 'preorder' ? 'badge--primary' : ''}">${TYPE_LABEL[o.type] || o.type}</span>`,
     o.pushEnabled ? `<span class="badge badge--success">${icon('notifications_active', 'icon--sm')}推播</span>` : '',
+    LANG_BADGE[o.lang] ? `<span class="badge" title="顧客使用的語言">${LANG_BADGE[o.lang]}</span>` : '',
     overdue ? `<span class="badge badge--danger">逾時 ${minutesSince(o.readyAt)} 分</span>` : '',
     ['rejected', 'cancelled'].includes(o.status) ? `<span class="badge badge--danger">${STATUS_LABEL[o.status]}</span>` : '',
-    o.status === 'picked' ? `<span class="badge">${escapeHtml(o.payment || '')}</span>` : '',
+    o.status === 'picked' && o.payment && !singlePayment() ? `<span class="badge">${escapeHtml(o.payment)}</span>` : '',
   ].join('');
 
   let actions = '';
@@ -254,9 +275,13 @@ async function doReject(o) {
 
 async function rejectWith(o, reason) {
   try {
-    await api.rejectOrder(o.id, reason);
+    let reasonTr = '';
+    if (o.lang && o.lang !== 'zh-Hant' && reason) {
+      reasonTr = REJECT_TR[reason]?.[o.lang] || await translateFor(o.lang, reason);
+    }
+    await api.rejectOrder(o.id, reason, reasonTr);
     toast(`已拒絕 ${o.no}`);
-    if (o.pushEnabled) api.notifyCustomer(o.id, 'rejected', reason);
+    if (o.pushEnabled) api.notifyCustomer(o.id, 'rejected', reasonTr || reason);
   } catch (err) {
     toast(errorText(err), 'danger');
   }
@@ -294,13 +319,13 @@ async function doUndo(o) {
 async function doPicked(o) {
   let payment = o.payment;
   if (o.type === 'preorder') {
-    const methods = settings?.paymentMethods || ['園遊券', '現金'];
+    const methods = paymentMethods();
     const total = displayTotal(o, itemsById());
     const { value, data } = await openDialog({
       title: `${o.no} 取餐收款`,
       body: `
         <p class="summary-row summary-row--total"><span>應收</span><span>${money(total)}</span></p>
-        <fieldset class="field" style="border:none;padding:0;margin:0">
+        <fieldset class="field" style="border:none;padding:0;margin:0" ${methods.length === 1 ? 'hidden' : ''}>
           <legend class="field__label">付款方式</legend>
           <div class="radio-group">
             ${methods.map((m, i) => `<label class="radio-chip"><input type="radio" name="payment" value="${escapeHtml(m)}" ${i === 0 ? 'checked' : ''}><span>${escapeHtml(m)}</span></label>`).join('')}
@@ -342,8 +367,13 @@ async function doMessage(o) {
   const text = String(data.get('text') || '').trim();
   if (!text) return;
   try {
-    await api.sendMessage(o.id, text);
-    const res = await api.notifyCustomer(o.id, 'message', text);
+    let tr = '';
+    if (o.lang && o.lang !== 'zh-Hant') {
+      const idx = (settings?.messageTemplates || []).indexOf(text);
+      tr = (idx >= 0 && settings?.i18n?.[o.lang]?.messageTemplates?.[idx]) || await translateFor(o.lang, text);
+    }
+    await api.sendMessage(o.id, text, tr);
+    const res = await api.notifyCustomer(o.id, 'message', tr || text);
     toast(res.sent ? '訊息已傳送並推播' : '訊息已傳送', 'success');
   } catch (err) {
     toast(errorText(err), 'danger');
@@ -357,7 +387,14 @@ async function doSms(o) {
     toast('這筆訂單沒有留電話', 'danger');
     return;
   }
-  const body = fillTemplate(settings?.smsTemplate, { no: o.no, surname: personName(o.surname || contact.surname || '', o.title) });
+  const lang = o.lang || 'zh-Hant';
+  let template = settings?.smsTemplate;
+  if (lang !== 'zh-Hant') {
+    // 翻譯後的範本若遺失 {no}，改用內建範本，避免簡訊少了訂單編號
+    const tr = settings?.i18n?.[lang]?.smsTemplate;
+    template = tr && tr.includes('{no}') ? tr : DEFAULT_SETTINGS.i18n[lang].smsTemplate;
+  }
+  const body = fillTemplate(template, { no: o.no, surname: personNameFor(o.surname || contact.surname || '', o.title, lang) });
   location.href = `sms:${contact.phone}?&body=${encodeURIComponent(body)}`;
 }
 
@@ -407,8 +444,9 @@ function renderPosCart() {
     : '當場付款並取餐，直接記入今日收支。';
   $('#pos-submit-text').textContent = pos.mode === 'later' ? '結帳並產生取餐編號' : '結帳記帳';
 
-  const methods = settings?.paymentMethods || ['園遊券', '現金'];
+  const methods = paymentMethods();
   if (!methods.includes(pos.payment)) pos.payment = methods[0];
+  $('#pos-payment').closest('fieldset').hidden = methods.length === 1;
   $('#pos-payment').innerHTML = methods.map((m) => `
     <label class="radio-chip"><input type="radio" name="payment" value="${escapeHtml(m)}" ${m === pos.payment ? 'checked' : ''}><span>${escapeHtml(m)}</span></label>`).join('');
 }

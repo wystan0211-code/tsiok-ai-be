@@ -203,7 +203,7 @@ export const api = {
     return out;
   }),
 
-  submitPreorder: ({ lines, surname, title, phone, consentText }) => guard(async () => {
+  submitPreorder: ({ lines, surname, title, phone, consentText, lang = 'zh-Hant' }) => guard(async () => {
     const uid = await customerUid();
     const settings = { ...DEFAULT_SETTINGS, ...(snapData(await getDoc(ref('settings', 'app'))) || {}) };
     if (!settings.acceptingPreorders) throw new ApiError('closed');
@@ -225,7 +225,7 @@ export const api = {
         tx.set(ref('counters', 'A'), { value: seq, lastOrderId: orderRef.id });
         tx.set(orderRef, {
           type: 'preorder', seq, no, status: 'pending', uid,
-          items: cleanLines(lines), itemCount: count, surname, title, pushEnabled: false,
+          items: cleanLines(lines), itemCount: count, surname, title, lang, pushEnabled: false,
           createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
         });
         tx.set(ref('contacts', orderRef.id), {
@@ -360,9 +360,10 @@ export const api = {
     });
   }),
 
-  rejectOrder: (orderId, reason) => guard(async () => {
+  rejectOrder: (orderId, reason, reasonTr = '') => guard(async () => {
     await updateDoc(ref('orders', orderId), {
-      status: 'rejected', rejectReason: reason || '', rejectedAt: serverTimestamp(), updatedAt: serverTimestamp(),
+      status: 'rejected', rejectReason: reason || '', rejectReasonTr: reasonTr || '',
+      rejectedAt: serverTimestamp(), updatedAt: serverTimestamp(),
     });
   }),
 
@@ -383,9 +384,10 @@ export const api = {
     });
   }),
 
-  sendMessage: (orderId, text) => guard(async () => {
+  // tr：翻譯成顧客語言的訊息(顧客使用中文時為空)
+  sendMessage: (orderId, text, tr = '') => guard(async () => {
     await updateDoc(ref('orders', orderId), {
-      messages: arrayUnion({ text, at: Date.now() }), updatedAt: serverTimestamp(),
+      messages: arrayUnion({ text, at: Date.now(), ...(tr ? { tr } : {}) }), updatedAt: serverTimestamp(),
     });
   }),
 
@@ -400,6 +402,24 @@ export const api = {
   },
 
   getContact: (orderId) => guard(async () => snapData(await getDoc(ref('contacts', orderId)))),
+
+  // 機器翻譯(Apps Script 內建 Google 翻譯)：回傳 { en: [...], ja: [...] }；失敗時回傳 null
+  // 商標「九愛！買」與範本變數 {no}、{surname} 先換成記號，翻譯後再還原，確保不被翻譯
+  async translate(texts, langs = ['en', 'ja']) {
+    const KEEP = ['九愛！買', '{no}', '{surname}'];
+    const protect = (s) => KEEP.reduce((acc, k, i) => acc.split(k).join(`[[${i}]]`), String(s || ''));
+    const restore = (s) => String(s || '').replace(/\[\[\s*(\d)\s*\]\]/g, (m, i) => KEEP[Number(i)] ?? m);
+    try {
+      const res = await callScript('translate', { texts: texts.map(protect), langs });
+      if (!res.results) return null;
+      const out = {};
+      for (const [lang, list] of Object.entries(res.results)) out[lang] = list.map(restore);
+      return out;
+    } catch (err) {
+      console.warn('翻譯失敗', err);
+      return null;
+    }
+  },
 
   createWalkin: ({ lines, payment, later, surname = '', title = '', phone = '' }) => guard(async () => {
     const staffUid = auth.currentUser?.uid;

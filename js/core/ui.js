@@ -1,5 +1,6 @@
 // 介面共用元件：選取器、圖標、提示訊息、對話框、展示模式橫幅
 import { escapeHtml } from './format.js';
+import { t } from './i18n.js';
 
 export const $ = (selector, root = document) => root.querySelector(selector);
 export const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -35,8 +36,8 @@ export function toast(message, kind = 'info', duration = 3200) {
 export function openDialog({
   title,
   body = '',
-  actions = [{ label: '確定', value: 'ok', variant: 'primary' }],
-  cancelLabel = '取消',
+  actions = [{ label: t('common.ok'), value: 'ok', variant: 'primary' }],
+  cancelLabel = t('common.cancel'),
   size = '',
   onOpen,
 }) {
@@ -68,13 +69,16 @@ export function openDialog({
 }
 
 // solid:true 時確認按鈕為紅底白字
-export async function confirmDialog(title, message, { confirmLabel = '確定', danger = false, solid = false } = {}) {
+export async function confirmDialog(title, message, {
+  confirmLabel = t('common.ok'), cancelLabel = t('common.cancel'), danger = false, solid = false,
+} = {}) {
   let variant = 'primary';
   if (danger) variant = solid ? 'danger-solid' : 'danger';
   const { value } = await openDialog({
     title,
     body: `<p>${escapeHtml(message)}</p>`,
     actions: [{ label: confirmLabel, value: 'ok', variant }],
+    cancelLabel,
   });
   return value === 'ok';
 }
@@ -83,7 +87,7 @@ export async function alertDialog(title, message) {
   await openDialog({
     title,
     body: `<p>${escapeHtml(message)}</p>`,
-    actions: [{ label: '知道了', value: 'ok' }],
+    actions: [{ label: t('common.gotIt'), value: 'ok' }],
     cancelLabel: '',
   });
 }

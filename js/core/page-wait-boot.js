@@ -23,7 +23,10 @@
     el = document.createElement('div');
     el.className = 'page-wait';
     el.setAttribute('role', 'status');
-    el.innerHTML = '<span class="page-wait__ring" aria-hidden="true"></span><span>載入中</span>';
+    var lang = '';
+    try { lang = localStorage.getItem('tab-lang') || ''; } catch (e) { lang = ''; }
+    var label = { en: 'Loading', ja: '読み込み中' }[lang] || '載入中';
+    el.innerHTML = '<span class="page-wait__ring" aria-hidden="true"></span><span>' + label + '</span>';
     document.body.appendChild(el);
   }
 

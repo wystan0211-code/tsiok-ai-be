@@ -1292,13 +1292,13 @@ html.is-page-wait body {
   font-family: var(--font-sans);
 }
 
-/* 右側箭頭：比設計稿放大 1.5 倍，箭頭右緣維持在原稿位置(距按鈕右緣 68px，1080 寬座標) */
+/* 右側箭頭：設計稿的 1.2 倍、一般粗細，箭頭右緣維持在原稿位置(1080 寬座標 x=921) */
 .home__chevron {
   position: absolute;
-  right: calc(var(--w) * 11 / 1080);
+  right: calc(var(--w) * 24 / 1080);
   top: 50%;
-  --icon-weight: 600;
-  font-size: calc(var(--w) * 160 / 1080);
+  --icon-weight: 400;
+  font-size: calc(var(--w) * 128 / 1080);
   transform: translateY(-50%);
 }
 
@@ -1355,6 +1355,21 @@ html.is-page-wait body {
     display: none;
   }
 
+  /* 標題列右側三個圖標按鈕靠攏，避免擠到「接受預點」 */
+  .has-tabbar .topbar__inner {
+    gap: var(--space-2);
+  }
+
+  .has-tabbar .topbar__inner > .switch {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .has-tabbar .topbar__inner > .btn--icon {
+    width: 36px;
+    margin-left: calc(var(--space-2) * -1 + 2px);
+  }
+
   /* 分頁移到畫面最下方，只顯示圖標 */
   .tabs--bar {
     position: fixed;
@@ -1408,11 +1423,18 @@ html.is-page-wait body {
     left: 0;
     width: 25%;
     height: 3px;
-    padding: 0 var(--space-5);
-    background-clip: content-box;
-    background-color: var(--color-primary-deep);
+    padding: 0 var(--space-2);
     transform: translateX(calc(var(--tab-index, 0) * 100%));
     transition: transform 0.25s ease;
+  }
+
+  /* 指示線本體：左右兩端圓角收邊 */
+  .tabs__indicator::before {
+    content: '';
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--color-primary-deep);
   }
 
   /* 內容與提示訊息避開底部分頁列 */
@@ -1423,4 +1445,140 @@ html.is-page-wait body {
   .has-tabbar .toast-box {
     bottom: calc(72px + env(safe-area-inset-bottom));
   }
+}
+
+/* ===== 首頁語言按鈕：白底圓形、黑框粗細同 logo 帶線條(設計圖 1080 寬座標 2.5px) ===== */
+.home__lang {
+  position: fixed;
+  z-index: 20;
+  top: max(calc(var(--w) * 40 / 1080), env(safe-area-inset-top));
+  left: calc(50vw - var(--w) / 2 + var(--w) * 40 / 1080);
+}
+
+.home__globe {
+  width: max(44px, calc(var(--w) * 120 / 1080));
+  height: max(44px, calc(var(--w) * 120 / 1080));
+  border-radius: 50%;
+  border: max(1px, calc(var(--w) * 2.5 / 1080)) solid var(--color-text);
+  background: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+}
+
+.home__globe .icon {
+  font-size: 26px;
+  width: 26px;
+}
+
+.lang-menu {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  min-width: 168px;
+  padding: var(--space-1);
+  background: #ffffff;
+  border: 1px solid var(--color-text);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+}
+
+.lang-menu[hidden] {
+  display: none;
+}
+
+.lang-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--tap-min);
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.lang-menu__item:hover {
+  background: var(--color-primary-soft);
+}
+
+.lang-menu__item .lang-menu__check {
+  visibility: hidden;
+}
+
+.lang-menu__item.is-current {
+  font-weight: var(--weight-semibold);
+}
+
+.lang-menu__item.is-current .lang-menu__check {
+  visibility: visible;
+}
+
+.lang-menu__item[lang='en'] {
+  font-family: 'Google Sans', system-ui, sans-serif;
+}
+
+.lang-menu__item[lang='ja'] {
+  font-family: 'Google Sans', 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', sans-serif;
+}
+
+/* ===== 顧客頁面的英文與日文字體 ===== */
+/* 英文全部使用 Google Sans */
+html[lang='en'] {
+  --font-sans: 'Google Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* 日文：英數字用 Google Sans，日文用 Noto Sans JP(思源黑體日文版) */
+html[lang='ja'] {
+  --font-sans: 'Google Sans', 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', sans-serif;
+  line-break: strict;
+}
+
+html[lang='en'] .home__start {
+  font-family: 'Google Sans', system-ui, sans-serif;
+}
+
+html[lang='ja'] .home__start {
+  font-family: 'Noto Sans JP', 'Google Sans', 'Hiragino Sans', sans-serif;
+}
+
+/* 英文較長：按鈕與標籤不斷行、留意間距 */
+html[lang='en'] .btn,
+html[lang='en'] .radio-chip span {
+  letter-spacing: 0.01em;
+}
+
+/* ===== 後台：英日文翻譯區塊 ===== */
+.tr-box {
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  background: var(--color-bg);
+}
+
+.tr-box > summary {
+  cursor: pointer;
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-sm);
+}
+
+.tr-box__lang {
+  border: none;
+  padding: 0;
+  margin: var(--space-3) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* 展示模式有頂部橫幅時，語言按鈕移到橫幅下方 */
+.demo-bar ~ .home__lang {
+  top: 72px;
 }

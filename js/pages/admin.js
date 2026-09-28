@@ -68,6 +68,77 @@ function splitList(value) {
   return String(value || '').split(/[、,，\n]/).map((s) => s.trim()).filter(Boolean);
 }
 
+// ===== 英文與日文翻譯 =====
+const TR_LANGS = [['en', '英文'], ['ja', '日文']];
+const str = (v) => String(v ?? '').trim();
+
+// 需要自動翻譯：翻譯欄位是空的，或中文改了但翻譯沒有被手動修改過
+function needAuto(typed, oldTr, srcChanged) {
+  return !typed || (srcChanged && typed === (oldTr || ''));
+}
+
+function itemTrFields(item) {
+  return `
+    <details class="tr-box">
+      <summary>英文與日文翻譯(儲存時自動翻譯，可手動修改)</summary>
+      ${TR_LANGS.map(([lang, label]) => {
+        const tr = item?.i18n?.[lang] || {};
+        return `<fieldset class="tr-box__lang">
+          <legend class="field__label">${label}</legend>
+          <label class="field"><span class="field__hint">名稱</span>
+            <input class="input" name="tr_${lang}_name" maxlength="60" value="${escapeHtml(tr.name || '')}"></label>
+          <label class="field"><span class="field__hint">說明</span>
+            <input class="input" name="tr_${lang}_description" maxlength="160" value="${escapeHtml(tr.description || '')}"></label>
+          <label class="field"><span class="field__hint">選項(用頓號、分隔，順序與中文相同)</span>
+            <input class="input" name="tr_${lang}_options" value="${escapeHtml((tr.options || []).join('、'))}"></label>
+        </fieldset>`;
+      }).join('')}
+    </details>`;
+}
+
+// 依表單內容產生品項翻譯；回傳 { i18n, auto: 自動翻譯的欄位數, failed: 翻譯服務無法使用 }
+async function buildItemI18n(payload, oldItem, data) {
+  const old = oldItem || {};
+  const changed = {
+    name: payload.name !== (old.name || ''),
+    description: payload.description !== (old.description || ''),
+    options: payload.options.join('、') !== (old.options || []).join('、'),
+  };
+  const result = {};
+  const todo = [];
+  for (const [lang] of TR_LANGS) {
+    const oldTr = old.i18n?.[lang] || {};
+    const typed = {
+      name: str(data.get(`tr_${lang}_name`)),
+      description: payload.description ? str(data.get(`tr_${lang}_description`)) : '',
+      options: payload.options.length ? splitList(data.get(`tr_${lang}_options`)) : [],
+    };
+    result[lang] = typed;
+    if (needAuto(typed.name, oldTr.name, changed.name)) todo.push([lang, 'name']);
+    if (payload.description && needAuto(typed.description, oldTr.description, changed.description)) todo.push([lang, 'description']);
+    if (payload.options.length && (typed.options.length !== payload.options.length
+      || (changed.options && typed.options.join('、') === (oldTr.options || []).join('、')))) todo.push([lang, 'options']);
+  }
+  if (!todo.length) return { i18n: result, auto: 0, failed: false };
+  const langs = [...new Set(todo.map(([l]) => l))];
+  const res = await api.translate([payload.name, payload.description, ...payload.options], langs);
+  if (!res) return { i18n: result, auto: 0, failed: true };
+  for (const [lang, field] of todo) {
+    const list = res[lang];
+    if (!list) continue;
+    if (field === 'name') result[lang].name = list[0] || '';
+    if (field === 'description') result[lang].description = list[1] || '';
+    if (field === 'options') result[lang].options = list.slice(2);
+  }
+  return { i18n: result, auto: todo.length, failed: false };
+}
+
+function translateNotice({ auto, failed }) {
+  if (failed) return '已儲存。自動翻譯目前無法使用，英文與日文可在「翻譯」區手動填寫。';
+  if (auto) return '已儲存，並自動翻譯成英文與日文。機器翻譯可能不自然，建議檢查一次。';
+  return '已儲存';
+}
+
 async function editItem(item) {
   const it = item || {
     name: '', price: 0, description: '', prepMinutes: 5, options: [], stockLimit: null,
@@ -100,7 +171,8 @@ async function editItem(item) {
       <label class="switch"><input type="checkbox" name="soldOut" ${it.soldOut ? 'checked' : ''}><span>標示售完</span></label>
       <label class="field"><span class="field__label">圖片(會自動壓縮)</span>
         <input class="input" name="image" type="file" accept="image/*"></label>
-      ${item?.hasImage ? '<label class="check"><input type="checkbox" name="removeImage"><span>移除目前圖片</span></label>' : ''}`,
+      ${item?.hasImage ? '<label class="check"><input type="checkbox" name="removeImage"><span>移除目前圖片</span></label>' : ''}
+      ${itemTrFields(item)}`,
     actions: [{ label: '儲存', value: 'save' }],
   });
   if (value !== 'save') return;
@@ -122,6 +194,8 @@ async function editItem(item) {
   }
   if (!item) payload.sortOrder = Math.max(0, ...items.map((i) => i.sortOrder || 0)) + 1;
   try {
+    const tr = await buildItemI18n(payload, item, data);
+    payload.i18n = tr.i18n;
     const id = await api.saveItem(item ? { id: item.id, ...payload } : payload);
     const file = data.get('image');
     if (file && file.size) {
@@ -130,7 +204,7 @@ async function editItem(item) {
     } else if (data.get('removeImage') === 'on') {
       await api.setItemImage(id, null);
     }
-    toast('已儲存', 'success');
+    toast(translateNotice(tr), tr.failed ? 'info' : 'success', tr.auto || tr.failed ? 6000 : 3200);
   } catch (err) {
     toast(err.message && !err.code ? err.message : errorText(err), 'danger');
   }
@@ -187,6 +261,53 @@ function fillSettings() {
   f.messageTemplates.value = (settings.messageTemplates || []).join('\n');
   f.smsTemplate.value = settings.smsTemplate || '';
   f.consentText.value = settings.consentText || '';
+  for (const [lang] of TR_LANGS) {
+    const tr = settings.i18n?.[lang] || {};
+    f[`tr_${lang}_bannerText`].value = tr.bannerText || '';
+    f[`tr_${lang}_consentText`].value = tr.consentText || '';
+    f[`tr_${lang}_messageTemplates`].value = (tr.messageTemplates || []).join('\n');
+    f[`tr_${lang}_smsTemplate`].value = tr.smsTemplate || '';
+  }
+}
+
+// 依設定表單產生翻譯；規則與品項相同
+async function buildSettingsI18n(patch, old, f) {
+  const lines = (v) => String(v || '').split('\n').map((s) => s.trim()).filter(Boolean);
+  const result = {};
+  const todo = []; // [lang, 欄位, 原文索引]
+  const texts = [patch.bannerText, patch.consentText, patch.smsTemplate, ...patch.messageTemplates];
+  const changed = {
+    bannerText: patch.bannerText !== (old.bannerText || ''),
+    consentText: patch.consentText !== (old.consentText || ''),
+    smsTemplate: patch.smsTemplate !== (old.smsTemplate || ''),
+    messageTemplates: patch.messageTemplates.join('\n') !== (old.messageTemplates || []).join('\n'),
+  };
+  for (const [lang] of TR_LANGS) {
+    const oldTr = old.i18n?.[lang] || {};
+    const typed = {
+      bannerText: patch.bannerText ? str(f[`tr_${lang}_bannerText`].value) : '',
+      consentText: str(f[`tr_${lang}_consentText`].value),
+      smsTemplate: str(f[`tr_${lang}_smsTemplate`].value),
+      messageTemplates: lines(f[`tr_${lang}_messageTemplates`].value),
+    };
+    result[lang] = typed;
+    ['bannerText', 'consentText', 'smsTemplate'].forEach((key, i) => {
+      if (patch[key] && needAuto(typed[key], oldTr[key], changed[key])) todo.push([lang, key, i]);
+    });
+    if (patch.messageTemplates.length && (typed.messageTemplates.length !== patch.messageTemplates.length
+      || (changed.messageTemplates && typed.messageTemplates.join('\n') === (oldTr.messageTemplates || []).join('\n')))) {
+      todo.push([lang, 'messageTemplates', 3]);
+    }
+  }
+  if (!todo.length) return { i18n: result, auto: 0, failed: false };
+  const res = await api.translate(texts, [...new Set(todo.map(([l]) => l))]);
+  if (!res) return { i18n: result, auto: 0, failed: true };
+  for (const [lang, key, i] of todo) {
+    const list = res[lang];
+    if (!list) continue;
+    result[lang][key] = key === 'messageTemplates' ? list.slice(3) : (list[i] || '');
+  }
+  return { i18n: result, auto: todo.length, failed: false };
 }
 
 $('#settings-form').addEventListener('input', (e) => {
@@ -214,10 +335,12 @@ $('#settings-form').addEventListener('submit', (e) => {
       return;
     }
     try {
+      const tr = await buildSettingsI18n(patch, settings || {}, f);
+      patch.i18n = tr.i18n;
       await api.saveSettings(patch);
       f.dataset.dirty = '0';
       $('#settings-note').textContent = '';
-      toast('設定已儲存', 'success');
+      toast(translateNotice(tr), tr.failed ? 'info' : 'success', tr.auto || tr.failed ? 6000 : 3200);
     } catch (err) {
       toast(errorText(err), 'danger');
     }

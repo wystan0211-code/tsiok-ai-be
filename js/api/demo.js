@@ -193,7 +193,7 @@ export const api = {
     return out;
   },
 
-  async submitPreorder({ lines, surname, title, phone, consentText }) {
+  async submitPreorder({ lines, surname, title, phone, consentText, lang = 'zh-Hant' }) {
     await delay(300);
     const uid = customerUid();
     const settings = { ...DEFAULT_SETTINGS, ...db.settings };
@@ -215,7 +215,7 @@ export const api = {
     db.orders[id] = {
       id, type: 'preorder', seq, no, status: 'pending', uid,
       items: lines.map((l) => ({ itemId: l.itemId, qty: l.qty, option: l.option ?? null })),
-      itemCount: count, surname, title, pushEnabled: false, messages: [],
+      itemCount: count, surname, title, lang, pushEnabled: false, messages: [],
       createdAt: now, updatedAt: now,
     };
     db.contacts[id] = { orderId: id, surname, phone, consentNotify: true, consentText, consentAt: now, createdAt: now };
@@ -321,12 +321,12 @@ export const api = {
     commit();
   },
 
-  async rejectOrder(orderId, reason) {
+  async rejectOrder(orderId, reason, reasonTr = '') {
     await delay();
     requireRole(STAFF);
     const o = getOrder(orderId);
     if (o.status !== 'pending') throw new ApiError('bad-state');
-    Object.assign(o, { status: 'rejected', rejectReason: reason || '', rejectedAt: Date.now(), updatedAt: Date.now() });
+    Object.assign(o, { status: 'rejected', rejectReason: reason || '', rejectReasonTr: reasonTr || '', rejectedAt: Date.now(), updatedAt: Date.now() });
     commit();
   },
 
@@ -358,17 +358,22 @@ export const api = {
     commit();
   },
 
-  async sendMessage(orderId, text) {
+  async sendMessage(orderId, text, tr = '') {
     await delay();
     requireRole(STAFF);
     const o = getOrder(orderId);
-    o.messages = [...(o.messages || []), { text, at: Date.now() }];
+    o.messages = [...(o.messages || []), { text, at: Date.now(), ...(tr ? { tr } : {}) }];
     o.updatedAt = Date.now();
     commit();
   },
 
   async notifyCustomer() {
     return { sent: false, reason: 'demo' };
+  },
+
+  // 展示模式沒有翻譯服務
+  async translate() {
+    return null;
   },
 
   async getContact(orderId) {

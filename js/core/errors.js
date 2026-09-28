@@ -1,4 +1,5 @@
 // 統一的錯誤類別：code 用於程式判斷，message 直接顯示給使用者
+import { getLang, t, hasKey } from './i18n.js';
 
 export const ERROR_MESSAGES = {
   closed: '攤位目前暫停接受預點，請直接到攤位點餐。',
@@ -31,7 +32,11 @@ export class ApiError extends Error {
 
 // 把任何錯誤轉成可顯示的文字
 export function errorText(err) {
-  if (err instanceof ApiError) return err.message;
+  if (err instanceof ApiError) {
+    // 顧客選了英文或日文時，改用對應語言的訊息
+    if (getLang() !== 'zh-Hant') return hasKey(`err.${err.code}`) ? t(`err.${err.code}`) : t('err.unknown');
+    return err.message;
+  }
   console.error(err);
-  return ERROR_MESSAGES.unknown;
+  return getLang() !== 'zh-Hant' ? t('err.unknown') : ERROR_MESSAGES.unknown;
 }
