@@ -12,6 +12,7 @@
   --color-text-muted: #5c5646;      /* 次要文字(7.27:1) */
   --color-control-border: #8a8472;  /* 輸入框、按鈕外框(3.72:1，符合元件 3:1) */
   --color-divider: #e6e2cc;         /* 裝飾分隔線 */
+  --color-divider-strong: #d4cdae;  /* 菜單分類之間較明顯的分隔線 */
   --color-success: #1e7a3c;         /* 成功文字(5.36:1) */
   --color-success-soft: #e8f3ea;
   --color-danger: #b3261e;          /* 錯誤文字(6.51:1) */

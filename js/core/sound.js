@@ -100,3 +100,51 @@ export function vibrate(pattern = [200, 100, 200]) {
     // 忽略
   }
 }
+
+// ===== 攤位端：較圓潤、較長的「叮咚」提示音(正弦波加泛音，柔和地淡出，類似木琴或門鈴) =====
+function softNote(at, frequency, duration, volume = 0.7) {
+  // 基音 + 2 倍、3 倍泛音，越高的泛音越小聲、越快消失，聽起來圓潤不刺耳
+  for (const [mult, level, decay] of [[1, 1, 1], [2, 0.28, 0.6], [3, 0.08, 0.35]]) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = frequency * mult;
+    const end = at + duration * decay;
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.exponentialRampToValueAtTime(volume * level, at + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, end);
+    osc.connect(gain).connect(out);
+    osc.start(at);
+    osc.stop(end + 0.05);
+  }
+}
+
+// 一組「叮—咚—叮」，約 1.6 秒
+export function chime() {
+  if (!ctx || !out) return;
+  const t = ctx.currentTime + 0.02;
+  softNote(t, 784, 1.1); // G5
+  softNote(t + 0.38, 659, 1.1); // E5
+  softNote(t + 0.76, 784, 1.0); // G5
+}
+
+// 持續響到呼叫 stopChimeLoop()(例如還有等待接單的訂單時)
+let chimeTimer = null;
+export function startChimeLoop(intervalMs = 3500) {
+  if (chimeTimer) return;
+  chime();
+  vibrate([300, 150, 300]);
+  chimeTimer = setInterval(() => {
+    chime();
+    vibrate([300, 150, 300]);
+  }, intervalMs);
+}
+
+export function stopChimeLoop() {
+  clearInterval(chimeTimer);
+  chimeTimer = null;
+}
+
+export function isChimeLooping() {
+  return chimeTimer !== null;
+}

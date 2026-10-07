@@ -5,6 +5,9 @@ import { t } from './i18n.js';
 export const $ = (selector, root = document) => root.querySelector(selector);
 export const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 
+// iPhone Safari 需要頁面上有 touchstart 監聽，按鈕的 :active 按下效果才會即時出現
+document.addEventListener('touchstart', () => {}, { passive: true });
+
 // Material Symbols Rounded 圖標(新增圖標時記得同步更新 HTML 中的 icon_names 清單)
 export function icon(name, extraClass = '') {
   return `<span class="material-symbols-rounded icon ${extraClass}" aria-hidden="true">${name}</span>`;

@@ -22,7 +22,7 @@
 <script type="module" src="js/pages/order.js"></script>
 </head>
 <body>
-  <header class="topbar">
+  <header class="topbar topbar--fixed">
     <div class="topbar__inner">
       <img class="topbar__logo" src="assets/brand/logo-horizontal.png" alt="九愛！買" width="640" height="260">
       <span class="topbar__spacer"></span>
@@ -87,12 +87,16 @@
         <span id="gallery-count" class="gallery__count" hidden></span>
       </div>
       <div class="detail__info stack">
-        <div>
+        <div class="detail__head">
           <h1 id="d-name" class="detail__name"></h1>
-          <p id="d-price" class="detail__price"></p>
-          <p id="d-meta" class="row text-sm muted"></p>
+          <!-- 價格在左，製作時間緊接在右側(不貼齊右邊) -->
+          <div class="detail__line">
+            <p id="d-price" class="detail__price"></p>
+            <span id="d-prep" class="detail__prep" hidden></span>
+          </div>
         </div>
         <p id="d-desc" class="detail__desc"></p>
+        <p id="d-meta" class="detail__tags" hidden></p>
         <fieldset id="d-options" class="field detail__options" hidden>
           <legend class="field__label" data-i18n="order.optionLegend">口味 / 選項</legend>
           <div id="d-option-list" class="radio-group"></div>

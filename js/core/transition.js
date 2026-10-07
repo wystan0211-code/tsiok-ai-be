@@ -3,7 +3,7 @@
 import { t } from './i18n.js';
 
 const KEY = 'tab-page-wait';
-const MIN_MS = 600; // 從按下到新頁面顯示，至少 0.6 秒，避免一閃而過
+const MIN_MS = 300; // 從按下到新頁面顯示，至少 0.3 秒，避免一閃而過
 
 function showOverlay() {
   if (document.querySelector('.page-wait')) return;

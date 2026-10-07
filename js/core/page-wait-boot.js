@@ -3,7 +3,7 @@
  * 只有上一頁用 goTo() 往前換頁時才會顯示；按返回、重新整理、直接開啟網址都不顯示 */
 (function () {
   var KEY = 'tab-page-wait';
-  var MAX_MS = 3000; // 最多 3 秒一定關閉，避免卡在等待畫面
+  var MAX_MS = 2000; // 最多 2 秒一定關閉，避免卡在等待畫面
   var stamp = 0;
   try {
     stamp = Number(sessionStorage.getItem(KEY)) || 0;

@@ -14,7 +14,7 @@ import {
   countItems, displayLines, displayTotal, lineLabel, priceLines, stockProblems, summarizeLines,
   normalizePhone, isValidPhone, ACTIVE_STATUSES, createdMs,
 } from '../core/order-logic.js';
-import { beep, unlockAudio } from '../core/sound.js';
+import { chime, startChimeLoop, stopChimeLoop, unlockAudio } from '../core/sound.js';
 import { qrSvg } from '../core/qr.js';
 import { personNameFor } from '../core/i18n.js';
 import { DEFAULT_SETTINGS } from '../core/defaults.js';
@@ -214,12 +214,12 @@ function detectNewOrders() {
   const pendingIds = orders.filter((o) => o.status === 'pending').map((o) => o.id);
   if (knownPending) {
     const fresh = orders.filter((o) => o.status === 'pending' && !knownPending.has(o.id));
-    if (fresh.length) {
-      beep(3);
-      toast(`新訂單 ${fresh.map((o) => o.no).join('、')}`, 'info', 5000);
-    }
+    if (fresh.length) toast(`新訂單 ${fresh.map((o) => o.no).join('、')}`, 'info', 5000);
   }
   knownPending = new Set([...(knownPending || []), ...pendingIds]);
+  // 有等待接單的訂單就持續響，直到全部接單或拒單
+  if (pendingIds.length) startChimeLoop();
+  else stopChimeLoop();
 }
 
 // ===== 訂單動作 =====
@@ -583,7 +583,7 @@ function renderInbox() {
   if (knownUnread) {
     const fresh = unread.filter((m) => !knownUnread.has(`${m.id}:${m.lastAt}`));
     if (fresh.length) {
-      beep(2, 660);
+      chime();
       toast(`收件匣：${fresh[0].surname || '顧客'} 預點 ${fresh[0].count} 件超過上限`, 'info', 6000);
     }
   }

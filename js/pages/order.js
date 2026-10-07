@@ -3,7 +3,7 @@
 // 按手機或瀏覽器的返回鍵會直接回到上一個畫面，不顯示等待畫面
 import { api, IS_DEMO } from '../api/index.js';
 import {
-  $, $$, icon, toast, alertDialog, showDemoBanner, withBusy,
+  $, $$, icon, toast, alertDialog, openDialog, showDemoBanner, withBusy,
 } from '../core/ui.js';
 import { errorText } from '../core/errors.js';
 import { store } from '../core/storage.js';
@@ -24,6 +24,7 @@ const CART_KEY = 'tab-cart';
 const FORM_KEY = 'tab-checkout';
 const HISTORY_KEY = 'tab-history';
 const token = new URLSearchParams(location.search).get('t') || '';
+const ADDED_TOAST_MS = 2000; // 「已加入購物車」小訊息停留 2 秒
 const AUTOPLAY_MS = 5000; // 橫幅每 5 秒換一張，使用者操作後 5 秒沒有動作才繼續
 
 let settings = null;
@@ -144,13 +145,28 @@ function renderMarquee(show) {
   box.hidden = !(show && settings.bannerActive && text);
   if (box.hidden || text === marqueeText) return;
   marqueeText = text;
-  for (const el of $$('.marquee__text', box)) el.textContent = text;
-  // 速度固定約每秒 60px，文字越長跑越久
-  requestAnimationFrame(() => {
-    const w = $('.marquee__text', box).offsetWidth;
-    box.style.setProperty('--marquee-duration', `${Math.max(8, w / 60)}s`);
-  });
+  requestAnimationFrame(() => layoutMarquee(box, text));
 }
+
+// 無縫捲動：同一段文字重複到至少一個畫面寬，再複製一份接在後面，動畫移動剛好一半就回到起點
+function layoutMarquee(box, text) {
+  const track = $('.marquee__track', box);
+  track.innerHTML = `<span class="marquee__text">${escapeHtml(text)}</span>`;
+  const unit = track.firstElementChild.offsetWidth || 1;
+  const copies = Math.max(1, Math.ceil(box.clientWidth / unit));
+  const half = Array.from({ length: copies }, (_, i) => `<span class="marquee__text" ${i ? 'aria-hidden="true"' : ''}>${escapeHtml(text)}</span>`).join('');
+  track.innerHTML = half + half.replaceAll('<span class="marquee__text" >', '<span class="marquee__text" aria-hidden="true">');
+  // 速度固定約每秒 60px
+  box.style.setProperty('--marquee-duration', `${(unit * copies) / 60}s`);
+}
+
+let marqueeWidth = 0;
+window.addEventListener('resize', () => {
+  const box = $('#marquee');
+  if (box.hidden || !marqueeText || box.clientWidth === marqueeWidth) return;
+  marqueeWidth = box.clientWidth;
+  layoutMarquee(box, marqueeText);
+});
 
 // ===== 橫幅輪播 =====
 const carousel = {
@@ -277,30 +293,41 @@ function coverHtml(item, cls) {
     : `<div class="${cls} ${cls}--empty">${icon('restaurant')}</div>`;
 }
 
-function addButton(item) {
+// 加入購物車的控制項(沿用 2.9 版設計)：
+// 沒有口味：先顯示 +，加入後變成「− 數量 +」；有口味：+ 開啟口味視窗，旁邊顯示已加入的數量
+function cartControl(item) {
   const name = escapeHtml(itemText(item).name);
-  if (isSoldOut(item)) return `<span class="mi__soldout">${t('order.soldOut')}</span>`;
+  if (isSoldOut(item)) return `<span class="soldout-tag">${t('order.soldOut')}</span>`;
   const qty = qtyOf(item.id);
-  return `${qty ? `<span class="mi__qty" aria-label="${t('order.addedCount', { n: qty })}">${qty}</span>` : ''}
-    <button type="button" class="btn-add mi__add press" data-add="${item.id}" aria-label="${t('order.add', { name })}">${icon('add')}</button>`;
+  if (item.options?.length) {
+    return `${qty ? `<span class="mi-ctrl__count" aria-label="${t('order.addedCount', { n: qty })}">×${qty}</span>` : ''}
+      <button type="button" class="btn-add press" data-action="choose" data-id="${item.id}" aria-label="${t('order.add', { name })}">${icon('add')}</button>`;
+  }
+  if (qty) {
+    return `<div class="stepper">
+        <button type="button" class="press" data-action="minus" data-id="${item.id}" aria-label="${t('order.decrease', { name })}">${icon('remove', 'icon--sm')}</button>
+        <span class="stepper__value" aria-live="polite">${qty}</span>
+        <button type="button" class="press" data-action="plus" data-id="${item.id}" aria-label="${t('order.increase', { name })}">${icon('add', 'icon--sm')}</button>
+      </div>`;
+  }
+  return `<button type="button" class="btn-add press" data-action="plus" data-id="${item.id}" aria-label="${t('order.add', { name })}">${icon('add')}</button>`;
 }
 
+// 品項列：照片在最左，文字緊貼照片右側，加入控制項在最右側(獨立一欄，不壓到其他內容)
 function rowHtml(item) {
   const tx = itemText(item);
   const left = stockLeft(item);
   const showLeft = settings.showStockLeft !== false && left != null && left > 0 && left <= 10;
   const tags = tagsText(item);
   return `<article class="mi ${isSoldOut(item) ? 'mi--soldout' : ''}" data-open="${item.id}" tabindex="0" role="button" aria-label="${escapeHtml(tx.name)}">
+    ${coverHtml(item, 'mi__img')}
     <div class="mi__text">
       <h3 class="mi__name">${escapeHtml(tx.name)}</h3>
       ${tx.description ? `<p class="mi__desc">${escapeHtml(tx.description.split('\n')[0])}</p>` : ''}
       <p class="mi__price">${money(item.price)}</p>
       ${(tags.length || showLeft) ? `<p class="mi__tags">${tags.map((tg) => `<span class="tag">${escapeHtml(tg)}</span>`).join('')}${showLeft ? `<span class="badge badge--warning">${t('order.left', { n: left })}</span>` : ''}</p>` : ''}
     </div>
-    <div class="mi__media">
-      ${coverHtml(item, 'mi__img')}
-      ${addButton(item)}
-    </div>
+    <div class="mi-ctrl" data-ctrl="${item.id}">${cartControl(item)}</div>
   </article>`;
 }
 
@@ -309,7 +336,7 @@ function featuredHtml(item) {
   return `<article class="fc ${isSoldOut(item) ? 'mi--soldout' : ''}" data-open="${item.id}" tabindex="0" role="button" aria-label="${escapeHtml(tx.name)}">
     <div class="fc__media">
       ${coverHtml(item, 'fc__img')}
-      ${addButton(item)}
+      <div class="mi-ctrl fc__ctrl" data-ctrl="${item.id}">${cartControl(item)}</div>
     </div>
     <h3 class="fc__name">${escapeHtml(tx.name)}</h3>
     <p class="fc__price">${money(item.price)}</p>
@@ -394,20 +421,69 @@ window.addEventListener('scroll', () => {
   spyFrame = requestAnimationFrame(spy);
 }, { passive: true });
 
-// 點品項開啟詳細頁；點 + 直接加入(有口味選項時改開啟詳細頁)
+// 點 +、− 直接增減購物車；有口味的 + 開啟口味視窗；點卡片其他地方才開啟詳細頁
 $('#menu-sections').addEventListener('click', (e) => {
-  const add = e.target.closest('[data-add]');
-  if (add) {
+  const btn = e.target.closest('[data-action]');
+  if (btn) {
     e.stopPropagation();
-    const item = itemsById()[add.dataset.add];
-    if (!item) return;
-    if (item.options?.length) navigate(`#item=${item.id}`);
-    else addToCart(item.id, null, 1);
+    const { action, id } = btn.dataset;
+    if (action === 'plus') {
+      addToCart(id, null, 1);
+      bumpFeedback(id);
+    }
+    if (action === 'minus') {
+      const idx = cart.lines.findIndex((l) => l.itemId === id);
+      if (idx >= 0) changeLine(idx, -1);
+    }
+    if (action === 'choose') chooseOption(id);
     return;
   }
+  if (e.target.closest('.mi-ctrl')) return; // 點到控制項的空白處不開啟詳細頁
   const row = e.target.closest('[data-open]');
   if (row) navigate(`#item=${row.dataset.open}`);
 });
+
+// 有口味的品項：選口味與數量後加入(沿用 2.9 版的視窗)
+async function chooseOption(itemId) {
+  const item = itemsById()[itemId];
+  if (!item) return;
+  const name = itemText(item).name;
+  const max = settings?.maxItemsPerOrder || 10;
+  const { value, data } = await openDialog({
+    title: name,
+    body: `
+      <fieldset class="field" style="border:none;padding:0;margin:0">
+        <legend class="field__label">${t('order.optionLegend')}</legend>
+        <div class="radio-group">
+          ${item.options.map((opt, i) => `<label class="radio-chip"><input type="radio" name="option" value="${escapeHtml(opt)}" ${i === 0 ? 'checked' : ''}><span>${escapeHtml(optionText(item, opt))}</span></label>`).join('')}
+        </div>
+      </fieldset>
+      <label class="field">
+        <span class="field__label">${t('order.qty')}</span>
+        <input class="input" type="number" name="qty" min="1" max="${max}" value="1" required>
+      </label>`,
+    actions: [{ label: t('order.addBtn'), value: 'add' }],
+  });
+  if (value !== 'add') return;
+  const qty = Math.max(1, Math.min(max, Number(data.get('qty')) || 1));
+  const option = data.get('option');
+  addToCart(itemId, option, qty);
+  bumpFeedback(itemId);
+  toast(t('order.addedToast', { item: withOption(name, optionText(item, option)), qty }), 'info', ADDED_TOAST_MS);
+}
+
+// 加入購物車的動態回饋：控制項彈一下、底部購物車列跳一下
+function bumpFeedback(itemId) {
+  for (const el of $$(`[data-ctrl="${itemId}"]`)) {
+    el.classList.remove('is-bump');
+    void el.offsetWidth; // 重新觸發動畫
+    el.classList.add('is-bump');
+  }
+  const bar = $('#cart-bar');
+  bar.classList.remove('is-bump');
+  void bar.offsetWidth;
+  bar.classList.add('is-bump');
+}
 
 $('#menu-sections').addEventListener('keydown', (e) => {
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-open]')) {
@@ -441,11 +517,15 @@ function renderDetail(id, fresh) {
   $('#d-price').textContent = money(item.price);
   const left = stockLeft(item);
   const showLeft = settings.showStockLeft !== false && left != null && left > 0 && left <= 10;
-  $('#d-meta').innerHTML = [
-    item.prepMinutes ? `<span class="row" style="gap:2px">${icon('schedule', 'icon--sm')}${t('order.prep', { n: item.prepMinutes })}</span>` : '',
+  const prep = $('#d-prep');
+  prep.hidden = !item.prepMinutes;
+  prep.innerHTML = item.prepMinutes ? `${icon('schedule', 'icon--sm')}${t('order.prep', { n: item.prepMinutes })}` : '';
+  const meta = [
     ...tagsText(item).map((tg) => `<span class="tag">${escapeHtml(tg)}</span>`),
     showLeft ? `<span class="badge badge--warning">${t('order.left', { n: left })}</span>` : '',
   ].join('');
+  $('#d-meta').innerHTML = meta;
+  $('#d-meta').hidden = !meta;
   $('#d-desc').textContent = tx.description;
   $('#d-desc').hidden = !tx.description;
 
@@ -550,15 +630,23 @@ $('#view-detail').addEventListener('click', (e) => {
   updateDetailBar(itemsById()[detail.id]);
 });
 
-$('#detail-add').addEventListener('click', () => {
+$('#detail-add').addEventListener('click', (e) => {
+  const btn = e.currentTarget;
   const item = itemsById()[detail.id];
-  if (!item || isSoldOut(item)) return;
+  if (!item || isSoldOut(item) || btn.classList.contains('is-added')) return;
   const option = item.options?.length ? $('input[name=d-option]:checked')?.value || item.options[0] : null;
   addToCart(item.id, option, detail.qty);
   const name = itemText(item).name;
-  toast(t('order.addedToast', { item: option ? withOption(name, optionText(item, option)) : name, qty: detail.qty }));
-  if (pushedFromMenu) history.back();
-  else location.replace('#');
+  toast(t('order.addedToast', { item: option ? withOption(name, optionText(item, option)) : name, qty: detail.qty }), 'info', ADDED_TOAST_MS);
+  // 按鈕先變成打勾並彈一下，再回到菜單，購物車列跟著跳一下
+  btn.classList.add('is-added');
+  btn.innerHTML = `${icon('check')}${escapeHtml(t('order.added'))}`;
+  setTimeout(() => {
+    btn.classList.remove('is-added');
+    if (pushedFromMenu) history.back();
+    else location.replace('#');
+    setTimeout(() => bumpFeedback(item.id), 60);
+  }, 280);
 });
 
 // ===== 確認訂單 =====
