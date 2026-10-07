@@ -230,6 +230,12 @@
         <div><button id="reset-counters" class="btn btn--danger" type="button">
           <span class="material-symbols-rounded icon" aria-hidden="true">restart_alt</span>編號歸零</button></div>
       </div>
+      <div class="card stack">
+        <h2 class="section-title">未完成訂單</h2>
+        <p class="muted text-sm">把所有還沒結束的訂單(等待接單、製作中、可取餐，含前幾天的)一次改為「已取消」並標記作廢，適合收攤後或顧客端卡在舊訂單時使用。資料會保留，不會通知顧客。另外，建立超過 12 小時仍未結束的訂單，顧客端會自動視為失效。</p>
+        <div><button id="void-orders" class="btn btn--danger" type="button">
+          <span class="material-symbols-rounded icon" aria-hidden="true">block</span>作廢所有未完成訂單</button></div>
+      </div>
       <div id="demo-reset-box" class="card stack" hidden>
         <h2 class="section-title">展示資料</h2>
         <p class="muted text-sm">清除這個瀏覽器中所有展示模式的訂單與設定，恢復成初始狀態。</p>

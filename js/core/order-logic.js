@@ -3,9 +3,29 @@
 export const FINAL_STATUSES = ['picked', 'rejected', 'cancelled'];
 export const ACTIVE_STATUSES = ['pending', 'accepted', 'ready'];
 
-// 訂單是否已結束(結束後才能再預點)
+// 訂單時效：建立超過 12 小時仍未結束，視為失效(顧客可重新預點)
+// firestore.rules 的 finalStatus() 也是 12 小時，兩邊要一起改
+export const ORDER_TTL_MS = 12 * 60 * 60 * 1000;
+
+// 建立時間(毫秒)；相容數字、Firestore Timestamp
+export function createdMs(order) {
+  const c = order?.createdAt;
+  if (typeof c === 'number') return c;
+  if (c && typeof c.toMillis === 'function') return c.toMillis();
+  if (c && typeof c.seconds === 'number') return c.seconds * 1000;
+  return 0;
+}
+
+// 尚未結束、但已超過時效
+export function isExpired(order, now = Date.now()) {
+  if (!order || order.deleted === true || FINAL_STATUSES.includes(order.status)) return false;
+  const created = createdMs(order);
+  return created > 0 && now - created > ORDER_TTL_MS;
+}
+
+// 訂單是否已結束(結束後才能再預點)；超過時效也算結束
 export function isFinal(order) {
-  return !order || order.deleted === true || FINAL_STATUSES.includes(order.status);
+  return !order || order.deleted === true || FINAL_STATUSES.includes(order.status) || isExpired(order);
 }
 
 export function countItems(lines = []) {

@@ -779,7 +779,7 @@ function renderFinance() {
     <tr data-order="${o.id}" class="${o.deleted ? 'is-deleted' : ''}">
       <td class="display-no">${escapeHtml(o.no)}</td>
       <td>${TYPE_LABEL[o.type] || o.type}</td>
-      <td>${o.deleted ? '已刪除' : (STATUS_LABEL[o.status] || o.status)}</td>
+      <td>${o.deleted ? '已刪除' : (o.voided ? '已作廢' : (STATUS_LABEL[o.status] || o.status))}</td>
       <td>${dateTime(o.establishedAt || o.createdAt)}</td>
       <td>${escapeHtml(personName(o.surname, o.title))}</td>
       <td>${escapeHtml(summarizeLines(displayLines(o, {})))}${o.note ? `<div class="muted">${escapeHtml(o.note)}</div>` : ''}</td>
@@ -888,7 +888,7 @@ $('#finance-export').addEventListener('click', (e) => withBusy(e.currentTarget, 
   }
   const header = ['訂單編號', '類型', '狀態', '已刪除', '姓氏', '電話', '品項', '件數', '金額', '付款方式', '送出時間', '確立時間', '取餐時間', '備註'];
   const rows = financeOrders.map((o) => [
-    o.no, TYPE_LABEL[o.type] || o.type, STATUS_LABEL[o.status] || o.status, o.deleted ? '是' : '',
+    o.no, TYPE_LABEL[o.type] || o.type, o.voided ? '已作廢' : (STATUS_LABEL[o.status] || o.status), o.deleted ? '是' : '',
     personName(o.surname, o.title), contactMap[o.id]?.phone ? `="${contactMap[o.id].phone}"` : '', // 公式寫法讓 Excel 保留開頭的 0
     (o.lines || []).map((l) => `${lineLabel(l)}×${l.qty}`).join('、'), o.itemCount ?? '', o.total ?? '',
     o.payment || '', dateTime(o.createdAt), dateTime(o.establishedAt), dateTime(o.pickedAt), o.note || '',
@@ -1013,6 +1013,46 @@ $('#reset-counters').addEventListener('click', async (e) => {
     }
   });
 });
+
+// 作廢所有未完成訂單：雙重確認(先看清單，再輸入文字)，只改狀態不刪除資料，不通知顧客
+const VOID_WORD = '確認作廢';
+$('#void-orders').addEventListener('click', (e) => withBusy(e.currentTarget, async () => {
+  try {
+    const list = await api.listUnfinishedOrders();
+    if (!list.length) {
+      toast('目前沒有未完成的訂單');
+      return;
+    }
+    const rows = list.map((o) => `<li><strong>${escapeHtml(o.no)}</strong> ${escapeHtml(STATUS_LABEL[o.status] || o.status)}<span class="muted"> · ${escapeHtml(dateTime(o.createdAt))}</span></li>`).join('');
+    const first = await openDialog({
+      title: `作廢 ${list.length} 張未完成訂單？`,
+      body: `<p>以下訂單會改為「已取消」並標記為作廢。資料與收支紀錄會保留，不會通知顧客；已扣除的品項庫存不會加回。</p>
+        <ul class="void-list">${rows}</ul>`,
+      actions: [{ label: '下一步', value: 'next', variant: 'danger' }],
+      cancelLabel: '取消',
+    });
+    if (first.value !== 'next') return;
+    const second = await openDialog({
+      title: '最後確認',
+      body: `<p>這個動作無法復原。請輸入「${VOID_WORD}」後按作廢。</p>
+        <label class="field"><input class="input" name="word" autocomplete="off" placeholder="${VOID_WORD}"></label>`,
+      actions: [{ label: `作廢 ${list.length} 張`, value: 'ok', variant: 'danger-solid' }],
+      cancelLabel: '取消',
+      onOpen(dlg) {
+        const input = dlg.querySelector('input[name=word]');
+        const btn = dlg.querySelector('button[value=ok]');
+        btn.disabled = true;
+        input.addEventListener('input', () => { btn.disabled = input.value.trim() !== VOID_WORD; });
+        input.focus();
+      },
+    });
+    if (second.value !== 'ok' || String(second.data.get('word') || '').trim() !== VOID_WORD) return;
+    const n = await api.voidOrders(list.map((o) => o.id));
+    toast(`已作廢 ${n} 張訂單`, 'success');
+  } catch (err) {
+    toast(errorText(err), 'danger');
+  }
+}));
 
 // 入口頁 QR code(依目前網站網址產生)
 const entryUrl = new URL('index.html', location.href).href;

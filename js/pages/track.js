@@ -9,7 +9,7 @@ import {
   escapeHtml, money, time, dateTime,
 } from '../core/format.js';
 import {
-  displayLines, displayTotal, estimateReadyAt, isFinal, normalizePhone, isValidPhone,
+  displayLines, displayTotal, estimateReadyAt, isFinal, isExpired, normalizePhone, isValidPhone,
 } from '../core/order-logic.js';
 import {
   t, getLang, itemText, optionText, totalMoney, withOption,
@@ -51,7 +51,7 @@ const ackKey = (id) => `tab-ack-${id}`;
 const isAcked = () => !!order && store.get(ackKey(order.id), false);
 
 function renderReady() {
-  const ready = order.status === 'ready';
+  const ready = order.status === 'ready' && !isExpired(order);
   const alerting = ready && !isAcked();
   $('#o-hero').classList.toggle('order-hero--ready', ready);
   $('#o-hero').classList.toggle('is-breathing', alerting);
@@ -255,8 +255,9 @@ function renderNotify() {
 function renderOrder() {
   show('order');
   const type = order.type === 'walkin' ? 'walkin' : 'preorder';
+  const expired = isExpired(order);
   $('#o-no').textContent = order.no;
-  $('#o-status').textContent = t(`status.${order.status}`);
+  $('#o-status').textContent = expired ? t('status.expired') : t(`status.${order.status}`);
   document.title = order.status === 'ready' ? t('track.docReady', { no: order.no }) : t('track.title');
 
   // 預估時間與說明
@@ -271,11 +272,12 @@ function renderOrder() {
   }
   if (order.status === 'ready') eta = t('track.etaReady');
   if (order.status === 'picked') eta = t('track.etaPicked', { time: time(order.pickedAt) });
+  if (expired) eta = '';
   $('#o-eta').textContent = eta;
 
   // 進度條(狀態沒變時不重畫，避免動畫重播)
   const steps = $('#o-steps');
-  const idx = STEP_INDEX[order.status];
+  const idx = expired ? null : STEP_INDEX[order.status];
   steps.hidden = idx == null;
   const stepsKey = `${type}:${order.status}:${getLang()}`;
   if (steps.dataset.key !== stepsKey) {
@@ -295,12 +297,14 @@ function renderOrder() {
 
   // 特殊狀態提示
   const alertBox = $('#o-alert');
-  if (order.status === 'rejected') {
+  if (expired) {
+    alertBox.innerHTML = `<div class="banner">${icon('info')}<p>${t('track.expired')}</p></div>`;
+  } else if (order.status === 'rejected') {
     // 拒絕原因：顧客選英日文時顯示攤位送出時翻譯好的版本
     const reason = getLang() !== 'zh-Hant' && order.rejectReasonTr ? order.rejectReasonTr : order.rejectReason;
     alertBox.innerHTML = `<div class="banner banner--danger">${icon('error')}<div><p><strong>${t('track.rejTitle')}</strong></p>${reason ? `<p>${escapeHtml(t('track.rejReason', { r: reason }))}</p>` : ''}<p>${t('track.rejHint')}</p></div></div>`;
   } else if (order.status === 'cancelled') {
-    alertBox.innerHTML = `<div class="banner">${icon('info')}<p>${t('track.cancelled')}</p></div>`;
+    alertBox.innerHTML = `<div class="banner">${icon('info')}<p>${t(order.voided ? 'track.voided' : 'track.cancelled')}</p></div>`;
   } else if (order.status === 'ready') {
     alertBox.innerHTML = `<div class="banner">${icon('notifications_active')}<p><strong>${t('track.readyStrong')}</strong> ${escapeHtml(t('track.readyBody', { no: order.no }))}</p></div>`;
   } else alertBox.innerHTML = '';
@@ -350,7 +354,7 @@ function canCancel() {
 function notifyChanges() {
   if (firstSnapshot || !prevOrder) return;
   if (prevOrder.status !== order.status) {
-    if (order.status === 'ready') {
+    if (order.status === 'ready' && !isExpired(order)) {
       // 重複響到按「我知道了」為止，最長 60 秒
       if (!isAcked()) startAlarm(60000);
       showLocalNotification(t('track.notiTitle'), t('track.notiBody', { no: order.no }));
@@ -471,9 +475,9 @@ async function init() {
     maybePromptPush();
   });
 
-  // 每 30 秒更新預估時間
+  // 每 15 秒更新預估時間，也讓超過 12 小時的訂單即時顯示為失效
   setInterval(() => {
-    if (order && ['pending', 'accepted'].includes(order.status)) renderOrder();
+    if (order && ['pending', 'accepted', 'ready'].includes(order.status)) renderOrder();
   }, 15000);
 }
 

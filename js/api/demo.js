@@ -5,7 +5,7 @@ import { DEFAULT_SETTINGS, DEMO_ITEMS, DEMO_USERS, DEMO_CATEGORIES } from '../co
 import { itemImageRefs, imageDocId } from '../core/images.js';
 import { formatNo, randomToken, startOfDay } from '../core/format.js';
 import {
-  countItems, isFinal, priceLines, stockProblems, stockUpdates,
+  countItems, isFinal, priceLines, stockProblems, stockUpdates, ORDER_TTL_MS, ACTIVE_STATUSES,
 } from '../core/order-logic.js';
 
 const DB_KEY = 'tab-demo-db-v1';
@@ -358,9 +358,10 @@ export const api = {
 
   // ===== 攤位營運 =====
   watchTodayOrders(cb) {
-    const from = startOfDay();
+    const today = startOfDay();
+    const from = Math.min(today, Date.now() - ORDER_TTL_MS);
     return watch((d) => Object.values(d.orders)
-      .filter((o) => o.createdAt >= from && !o.deleted)
+      .filter((o) => o.createdAt >= from && !o.deleted && (o.createdAt >= today || !isFinal(o)))
       .sort((a, b) => a.createdAt - b.createdAt), cb);
   },
 
@@ -681,6 +682,25 @@ export const api = {
     if (db.users[uid]?.role === 'admin') throw new ApiError('permission', '不能刪除管理員帳號。');
     delete db.users[uid];
     commit();
+  },
+
+  async listUnfinishedOrders() {
+    requireRole(ADMIN);
+    return Object.values(db.orders)
+      .filter((o) => ACTIVE_STATUSES.includes(o.status) && !o.deleted)
+      .sort((a, b) => a.createdAt - b.createdAt);
+  },
+
+  async voidOrders(ids) {
+    requireRole(ADMIN);
+    const now = Date.now();
+    for (const id of ids) {
+      const o = db.orders[id];
+      if (!o) continue;
+      Object.assign(o, { status: 'cancelled', voided: true, cancelledAt: now, updatedAt: now });
+    }
+    commit();
+    return ids.length;
   },
 
   async resetCounters() {

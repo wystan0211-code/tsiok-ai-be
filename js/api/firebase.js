@@ -6,7 +6,7 @@ import { DEFAULT_SETTINGS } from '../core/defaults.js';
 import { formatNo, randomToken, startOfDay, pad2 } from '../core/format.js';
 import { itemImageRefs, imageDocId } from '../core/images.js';
 import {
-  countItems, isFinal, priceLines, stockProblems, stockUpdates,
+  countItems, isFinal, priceLines, stockProblems, stockUpdates, ORDER_TTL_MS, ACTIVE_STATUSES,
 } from '../core/order-logic.js';
 
 const SDK = `https://www.gstatic.com/firebasejs/${CONFIG.firebaseSdkVersion}`;
@@ -384,10 +384,13 @@ export const api = {
   staffLogout: () => guard(() => signOut(auth)),
 
   // ===== 攤位營運 =====
+  // 今天的訂單，加上 12 小時內建立、跨日但還沒結束的訂單(例如前一晚 23:50 的單)
   watchTodayOrders(cb) {
+    const today = startOfDay();
+    const from = Math.min(today, Date.now() - ORDER_TTL_MS);
     const q = query(collection(db, 'orders'),
-      where('createdAt', '>=', Timestamp.fromMillis(startOfDay())), orderBy('createdAt'));
-    return watchQuery(q, cb, (list) => list.filter((o) => !o.deleted));
+      where('createdAt', '>=', Timestamp.fromMillis(from)), orderBy('createdAt'));
+    return watchQuery(q, cb, (list) => list.filter((o) => !o.deleted && (o.createdAt >= today || !isFinal(o))));
   },
 
   acceptOrder: (orderId) => guard(async () => {
@@ -656,6 +659,28 @@ export const api = {
 
   deleteAccount: (uid) => guard(async () => {
     await callScript('deleteAccount', { uid });
+  }),
+
+  // 所有未結束的訂單(含前幾天、已超過時效的)，給「作廢所有未完成訂單」確認用
+  listUnfinishedOrders: () => guard(async () => {
+    const snap = await getDocs(query(collection(db, 'orders'), where('status', 'in', ACTIVE_STATUSES)));
+    return snap.docs.map(snapData).filter((o) => !o.deleted).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  }),
+
+  // 作廢：改為「已取消」並標記 voided，不刪除資料、不通知顧客；每批最多 400 筆
+  voidOrders: (ids) => guard(async () => {
+    const by = auth.currentUser?.uid || null;
+    for (let i = 0; i < ids.length; i += 400) {
+      const batch = writeBatch(db);
+      for (const id of ids.slice(i, i + 400)) {
+        batch.update(ref('orders', id), {
+          status: 'cancelled', voided: true, voidedBy: by,
+          cancelledAt: serverTimestamp(), updatedAt: serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    }
+    return ids.length;
   }),
 
   resetCounters: () => guard(async () => {

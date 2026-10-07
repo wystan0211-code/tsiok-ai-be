@@ -8,10 +8,11 @@ import { requireStaff, hasRole } from '../core/guard.js';
 import { store } from '../core/storage.js';
 import {
   escapeHtml, money, time, minutesSince, fillTemplate, personName, TITLES, TYPE_LABEL, ROLE_LABEL, STATUS_LABEL,
+  startOfDay,
 } from '../core/format.js';
 import {
   countItems, displayLines, displayTotal, lineLabel, priceLines, stockProblems, summarizeLines,
-  normalizePhone, isValidPhone, ACTIVE_STATUSES,
+  normalizePhone, isValidPhone, ACTIVE_STATUSES, createdMs,
 } from '../core/order-logic.js';
 import { beep, unlockAudio } from '../core/sound.js';
 import { qrSvg } from '../core/qr.js';
@@ -85,8 +86,9 @@ function cardHtml(o, forceOpen = false) {
     `<span class="badge ${o.type === 'preorder' ? 'badge--primary' : ''}">${TYPE_LABEL[o.type] || o.type}</span>`,
     o.pushEnabled ? `<span class="badge badge--success">${icon('notifications_active', 'icon--sm')}推播</span>` : '',
     LANG_BADGE[o.lang] ? `<span class="badge" title="顧客使用的語言">${LANG_BADGE[o.lang]}</span>` : '',
+    createdMs(o) < startOfDay() ? '<span class="badge badge--warning">前一天</span>' : '',
     overdue ? `<span class="badge badge--danger">逾時 ${minutesSince(o.readyAt)} 分</span>` : '',
-    ['rejected', 'cancelled'].includes(o.status) ? `<span class="badge badge--danger">${STATUS_LABEL[o.status]}</span>` : '',
+    ['rejected', 'cancelled'].includes(o.status) ? `<span class="badge badge--danger">${o.voided ? '已作廢' : STATUS_LABEL[o.status]}</span>` : '',
     o.status === 'picked' && o.payment && !singlePayment() ? `<span class="badge">${escapeHtml(o.payment)}</span>` : '',
   ].join('');
 
