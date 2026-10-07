@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,chevron_right,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,language,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,add_photo_alternate,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,chevron_left,chevron_right,close,delete,done_all,download,edit,error,expand_more,fullscreen,group,image,inbox,info,language,link_off,login,logout,near_me,notifications,notifications_active,notifications_off,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,upload,view_kanban,volume_up,warning,zoom_in,zoom_out&display=block">
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/components.css">
@@ -24,11 +24,23 @@
 <body>
   <header class="topbar">
     <div class="topbar__inner">
-      <a href="index.html" aria-label="回到入口" data-i18n-aria="track.toEntry"><img class="topbar__logo" src="assets/brand/logo-horizontal.png" alt="九愛！買" width="640" height="260"></a>
+      <img class="topbar__logo" src="assets/brand/logo-horizontal.png" alt="九愛！買" width="640" height="260">
       <span class="topbar__spacer"></span>
-      <span class="topbar__title" data-i18n="track.heading">訂單進度</span>
+      <!-- 訂單進行中不顯示返回；訂單結束或在找回訂單畫面才顯示 -->
+      <a id="back-btn" class="btn btn--ghost btn--icon" href="index.html" aria-label="回到首頁" data-i18n-aria="common.backHome" hidden>
+        <span class="material-symbols-rounded icon" aria-hidden="true">arrow_back_ios_new</span>
+      </a>
     </div>
   </header>
+
+  <!-- 可取餐提醒列：按「我知道了」後關閉 -->
+  <div id="ready-bar" class="ready-bar" role="alert" hidden>
+    <div class="ready-bar__inner">
+      <span class="material-symbols-rounded icon" aria-hidden="true">notifications_active</span>
+      <strong id="ready-bar-text" class="ready-bar__text"></strong>
+      <button id="ready-ack" type="button" class="btn btn--sm ready-bar__btn press" data-i18n="track.ack">我知道了</button>
+    </div>
+  </div>
 
   <main class="page stack">
     <section id="state-loading" class="loading">
@@ -64,7 +76,7 @@
     <section id="view-order" class="stack flush" hidden>
       <ol id="o-steps" class="steps" aria-label="訂單進度" data-i18n-aria="track.heading"></ol>
 
-      <div class="card order-hero">
+      <div id="o-hero" class="card order-hero">
         <p class="muted" data-i18n="track.orderNo">訂單編號</p>
         <p id="o-no" class="display-no order-hero__no"></p>
         <p id="o-status" class="order-hero__status"></p>
@@ -74,6 +86,16 @@
       <div id="o-alert"></div>
 
       <section id="o-notify" class="card stack" hidden></section>
+
+      <!-- 引導我去攤位 -->
+      <section id="o-guide" class="card guide" hidden>
+        <button id="guide-toggle" type="button" class="guide__toggle" aria-expanded="false" aria-controls="guide-body">
+          <span class="material-symbols-rounded icon" aria-hidden="true">near_me</span>
+          <span class="guide__label" data-i18n="guide.button">引導我去攤位</span>
+          <span class="material-symbols-rounded icon guide__chevron" aria-hidden="true">expand_more</span>
+        </button>
+        <div id="guide-body" class="guide__body" hidden></div>
+      </section>
 
       <section id="o-messages-box" class="card stack" hidden>
         <h2 class="section-title" data-i18n="track.messagesTitle">攤位訊息</h2>
@@ -100,6 +122,7 @@
           <span class="material-symbols-rounded icon" aria-hidden="true">volume_up</span>
           <span data-i18n="track.testSound">測試提示音</span>
         </button>
+        <p class="muted text-xs" style="text-align:center" data-i18n="track.volumeTip">聽不清楚請調高媒體音量</p>
       </div>
     </section>
   </main>

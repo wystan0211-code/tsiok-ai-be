@@ -1,7 +1,8 @@
 // 展示模式後端：資料存在瀏覽器 localStorage，用 BroadcastChannel 讓同一瀏覽器的分頁即時同步
 // 規則與 Firebase 版相同(一次性連結、每支電話一張進行中訂單、數量上限、庫存)，方便在連接 Firebase 前完整測試流程
 import { ApiError } from '../core/errors.js';
-import { DEFAULT_SETTINGS, DEMO_ITEMS, DEMO_USERS } from '../core/defaults.js';
+import { DEFAULT_SETTINGS, DEMO_ITEMS, DEMO_USERS, DEMO_CATEGORIES } from '../core/defaults.js';
+import { itemImageRefs, imageDocId } from '../core/images.js';
 import { formatNo, randomToken, startOfDay } from '../core/format.js';
 import {
   countItems, isFinal, priceLines, stockProblems, stockUpdates,
@@ -10,13 +11,45 @@ import {
 const DB_KEY = 'tab-demo-db-v1';
 const UID_KEY = 'tab-demo-uid';
 const STAFF_KEY = 'tab-demo-staff';
+// 圖片另外存放，避免每次存檔都要重寫整份資料
+const IMG_PREFIX = 'tab-demo-img:';
+
+function readImg(key) {
+  try {
+    return localStorage.getItem(IMG_PREFIX + key);
+  } catch {
+    return null;
+  }
+}
+
+function writeImg(key, data) {
+  try {
+    if (data == null) localStorage.removeItem(IMG_PREFIX + key);
+    else localStorage.setItem(IMG_PREFIX + key, data);
+  } catch {
+    // localStorage 容量有限(約 5 MB)，展示模式放太多圖片時會失敗
+    throw new ApiError('invalid', '展示模式的瀏覽器儲存空間不足，請改用較小或較少的圖片。');
+  }
+}
+
+function clearImgs() {
+  try {
+    Object.keys(localStorage).filter((k) => k.startsWith(IMG_PREFIX)).forEach((k) => localStorage.removeItem(k));
+  } catch {
+    // 忽略
+  }
+}
 
 function seed() {
   const items = {};
   for (const it of DEMO_ITEMS) items[it.id] = { ...it, updatedAt: Date.now() };
   const users = {};
   for (const u of DEMO_USERS) users[u.uid] = { ...u, createdAt: Date.now() };
+  const categories = {};
+  for (const c of DEMO_CATEGORIES) categories[c.id] = { ...c };
   return {
+    categories,
+    banners: {},
     settings: { ...DEFAULT_SETTINGS },
     items,
     itemImages: {},
@@ -189,8 +222,37 @@ export const api = {
 
   async getItemImages(items) {
     const out = {};
-    for (const it of items) if (it.hasImage && db.itemImages[it.id]) out[it.id] = db.itemImages[it.id].data;
+    for (const it of items) {
+      const cover = itemImageRefs(it)[0];
+      const data = cover && readImg(imageDocId(cover, 's'));
+      if (data) out[it.id] = data;
+    }
     return out;
+  },
+
+  async getImages(refs, size = 'l') {
+    const out = {};
+    for (const r of refs) {
+      const data = readImg(imageDocId(r, size));
+      if (data) out[r.id] = data;
+    }
+    return out;
+  },
+
+  watchCategories(cb) {
+    return watch((d) => Object.values(d.categories || {}).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)), cb);
+  },
+
+  watchBanners(cb) {
+    // 圖片存在另外的位置，這裡補上
+    return watch((d) => Object.values(d.banners || {})
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+      .map((b) => ({ ...b, data: readImg(`banner:${b.id}`) }))
+      .filter((b) => b.data), cb);
+  },
+
+  async getSiteImage(id) {
+    return readImg(`site:${id}`);
   },
 
   async submitPreorder({ lines, surname, title, phone, consentText, lang = 'zh-Hant' }) {
@@ -448,25 +510,83 @@ export const api = {
   async deleteItem(id) {
     await delay();
     requireRole(MANAGER);
+    for (const r of itemImageRefs(db.items[id])) {
+      writeImg(imageDocId(r, 's'), null);
+      writeImg(imageDocId(r, 'l'), null);
+    }
     delete db.items[id];
-    delete db.itemImages[id];
     commit();
   },
 
-  async setItemImage(id, dataUrl) {
+  async saveItemImages(itemId, { add = [], order = [], remove = [] }) {
     await delay();
     requireRole(MANAGER);
-    if (dataUrl) db.itemImages[id] = { data: dataUrl };
-    else delete db.itemImages[id];
-    Object.assign(db.items[id], { hasImage: !!dataUrl, imageVersion: Date.now(), updatedAt: Date.now() });
+    const written = [];
     try {
-      commit();
+      for (const img of add) {
+        writeImg(`${img.id}_s`, img.small);
+        written.push(`${img.id}_s`);
+        writeImg(`${img.id}_l`, img.large);
+        written.push(`${img.id}_l`);
+      }
     } catch (err) {
-      // localStorage 容量有限(約 5 MB)，展示模式放太多圖片時會失敗
-      delete db.itemImages[id];
-      db.items[id].hasImage = false;
-      throw new ApiError('invalid', '展示模式的瀏覽器儲存空間不足，請改用較小的圖片。');
+      written.forEach((k) => writeImg(k, null));
+      throw err;
     }
+    for (const r of remove) {
+      writeImg(imageDocId(r, 's'), null);
+      writeImg(imageDocId(r, 'l'), null);
+    }
+    Object.assign(db.items[itemId], { images: order, hasImage: order.length > 0, imageVersion: Date.now(), updatedAt: Date.now() });
+    commit();
+  },
+
+  async saveCategory(cat) {
+    await delay();
+    requireRole(MANAGER);
+    const id = cat.id || newId();
+    db.categories ??= {};
+    db.categories[id] = { ...(db.categories[id] || {}), ...cat, id };
+    commit();
+    return id;
+  },
+
+  async deleteCategory(id) {
+    await delay();
+    requireRole(MANAGER);
+    delete db.categories[id];
+    commit();
+  },
+
+  async addBanner(dataUrl, sortOrder) {
+    await delay();
+    requireRole(MANAGER);
+    const id = newId();
+    writeImg(`banner:${id}`, dataUrl);
+    db.banners ??= {};
+    db.banners[id] = { id, sortOrder };
+    commit();
+  },
+
+  async deleteBanner(id) {
+    await delay();
+    requireRole(MANAGER);
+    writeImg(`banner:${id}`, null);
+    delete db.banners[id];
+    commit();
+  },
+
+  async reorderBanners(ids) {
+    requireRole(MANAGER);
+    ids.forEach((id, i) => { if (db.banners[id]) db.banners[id].sortOrder = i + 1; });
+    commit();
+  },
+
+  async setSiteImage(id, dataUrl) {
+    await delay();
+    requireRole(MANAGER);
+    writeImg(`site:${id}`, dataUrl);
+    commit();
   },
 
   async saveSettings(patch) {
@@ -571,6 +691,7 @@ export const api = {
 
   async resetDemo() {
     localStorage.removeItem(STAFF_KEY);
+    clearImgs();
     db = seed();
     commit();
     emitStaffAuth();

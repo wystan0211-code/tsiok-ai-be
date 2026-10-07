@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,chevron_right,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,language,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,add_photo_alternate,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,chevron_left,chevron_right,close,delete,done_all,download,edit,error,expand_more,fullscreen,group,image,inbox,info,language,link_off,login,logout,near_me,notifications,notifications_active,notifications_off,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,upload,view_kanban,volume_up,warning,zoom_in,zoom_out&display=block">
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/components.css">
@@ -26,14 +26,18 @@
     <div class="topbar__inner">
       <img class="topbar__logo" src="assets/brand/logo-horizontal.png" alt="九愛！買" width="640" height="260">
       <span class="topbar__spacer"></span>
-      <a id="back-menu" class="btn btn--ghost btn--icon" href="#" aria-label="返回菜單" data-i18n-aria="order.back" hidden>
+      <a id="back-btn" class="btn btn--ghost btn--icon" href="index.html" aria-label="回到首頁" data-i18n-aria="common.backHome">
         <span class="material-symbols-rounded icon" aria-hidden="true">arrow_back_ios_new</span>
       </a>
     </div>
   </header>
 
+  <!-- 跑馬燈：只在菜單畫面顯示，內容由後台設定 -->
+  <div id="marquee" class="marquee" hidden>
+    <div class="marquee__track"><span class="marquee__text"></span><span class="marquee__text" aria-hidden="true"></span></div>
+  </div>
+
   <main class="page stack">
-    <div id="banner" class="banner" hidden></div>
     <section id="state-loading" class="loading">
       <span class="material-symbols-rounded icon spin" aria-hidden="true">progress_activity</span>
       <span data-i18n="common.loading">載入中</span>
@@ -54,8 +58,58 @@
       </div>
     </section>
 
-    <section id="view-menu" hidden>
-      <div id="menu-list" class="menu-list"></div>
+    <!-- 菜單 -->
+    <section id="view-menu" class="menu-view" hidden>
+      <div id="carousel" class="carousel" role="region" aria-roledescription="carousel" data-i18n-aria="carousel.label" aria-label="宣傳輪播" hidden>
+        <div class="carousel__frame">
+          <div id="carousel-track" class="carousel__track"></div>
+          <button type="button" class="carousel__nav carousel__nav--prev" data-carousel="prev" aria-label="上一張" data-i18n-aria="carousel.prev">
+            <span class="material-symbols-rounded icon" aria-hidden="true">chevron_left</span>
+          </button>
+          <button type="button" class="carousel__nav carousel__nav--next" data-carousel="next" aria-label="下一張" data-i18n-aria="carousel.next">
+            <span class="material-symbols-rounded icon" aria-hidden="true">chevron_right</span>
+          </button>
+        </div>
+        <div id="carousel-dots" class="carousel__dots" aria-hidden="true"></div>
+      </div>
+
+      <nav id="cat-bar" class="cat-bar" aria-label="菜單分類" data-i18n-aria="menu.categories" hidden>
+        <div id="cat-track" class="cat-bar__track"></div>
+      </nav>
+
+      <div id="menu-sections"></div>
+    </section>
+
+    <!-- 品項詳細頁 -->
+    <section id="view-detail" class="detail" hidden>
+      <div class="gallery">
+        <div id="gallery-track" class="gallery__track"></div>
+        <span id="gallery-count" class="gallery__count" hidden></span>
+      </div>
+      <div class="detail__info stack">
+        <div>
+          <h1 id="d-name" class="detail__name"></h1>
+          <p id="d-price" class="detail__price"></p>
+          <p id="d-meta" class="row text-sm muted"></p>
+        </div>
+        <p id="d-desc" class="detail__desc"></p>
+        <fieldset id="d-options" class="field detail__options" hidden>
+          <legend class="field__label" data-i18n="order.optionLegend">口味 / 選項</legend>
+          <div id="d-option-list" class="radio-group"></div>
+        </fieldset>
+        <div class="row row--between">
+          <span class="field__label" data-i18n="order.qty">數量</span>
+          <div class="stepper">
+            <button type="button" class="press" data-detail="minus" aria-label="減少" data-i18n-aria="order.decreaseShort">
+              <span class="material-symbols-rounded icon icon--sm" aria-hidden="true">remove</span>
+            </button>
+            <span id="d-qty" class="stepper__value" aria-live="polite">1</span>
+            <button type="button" class="press" data-detail="plus" aria-label="增加" data-i18n-aria="order.increaseShort">
+              <span class="material-symbols-rounded icon icon--sm" aria-hidden="true">add</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section id="view-checkout" class="stack" hidden>
@@ -102,6 +156,21 @@
       </form>
     </section>
   </main>
+
+  <!-- 全螢幕照片檢視 -->
+  <div id="viewer" class="viewer" role="dialog" aria-modal="true" hidden>
+    <div id="viewer-track" class="viewer__track"></div>
+    <span id="viewer-count" class="viewer__count"></span>
+    <button id="viewer-close" type="button" class="viewer__close" aria-label="關閉" data-i18n-aria="common.close">
+      <span class="material-symbols-rounded icon" aria-hidden="true">close</span>
+    </button>
+  </div>
+
+  <div id="detail-bar" class="cart-bar" hidden>
+    <div class="cart-bar__inner">
+      <button id="detail-add" type="button" class="btn btn--primary btn--lg btn--block press"></button>
+    </div>
+  </div>
 
   <div id="cart-bar" class="cart-bar" hidden>
     <div class="cart-bar__inner">

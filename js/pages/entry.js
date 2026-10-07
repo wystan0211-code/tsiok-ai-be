@@ -6,6 +6,7 @@ import { errorText } from '../core/errors.js';
 import { isFinal } from '../core/order-logic.js';
 import { goTo } from '../core/transition.js';
 import { getLang, setLang, onLangChange } from '../core/i18n.js';
+import { isLineInApp } from '../core/env.js';
 
 showDemoBanner(IS_DEMO);
 
@@ -16,12 +17,16 @@ const DESIGN = {
   ja: 'assets/brand/home-design-ja.webp',
 };
 
-const states = ['loading', 'closed', 'active'];
-function show(name) {
+const states = ['loading', 'closed', 'active', 'line'];
+function show(requested) {
+  const name = isLineInApp() ? 'line' : requested;
   for (const s of states) $(`#state-${s}`).hidden = s !== name;
   $('#start-btn').hidden = name !== 'ready';
   $('#active-link').hidden = name !== 'active';
 }
+
+// LINE 內建瀏覽器：一開始就顯示提示，不必等資料載入
+if (isLineInApp()) show('line');
 
 let settings = null;
 let customerState = null;

@@ -159,6 +159,32 @@ const DICT = {
   'track.messageToast': ['攤位訊息：{text}', 'Message from the stall: {text}', '屋台からのメッセージ：{text}'],
   'track.sentToast': ['訂單已送出，等待攤位接單', 'Order sent. Waiting for the stall to confirm.', '注文を送信しました。屋台の確認をお待ちください。'],
 
+  // 菜單、輪播、詳細頁
+  'common.backHome': ['回到首頁', 'Back to home', 'ホームに戻る'],
+  'common.close': ['關閉', 'Close', '閉じる'],
+  'menu.featured': ['推薦', 'Recommended', 'おすすめ'],
+  'menu.other': ['其他', 'Other', 'その他'],
+  'menu.categories': ['菜單分類', 'Menu categories', 'メニューのカテゴリー'],
+  'carousel.label': ['宣傳輪播', 'Promotions', 'お知らせ'],
+  'carousel.prev': ['上一張', 'Previous', '前へ'],
+  'carousel.next': ['下一張', 'Next', '次へ'],
+  'detail.addWithPrice': ['加入 · {price}', 'Add · {price}', '追加 · {price}'],
+  'detail.photo': ['照片 {i} / {n}', 'Photo {i} of {n}', '写真 {i} / {n}'],
+
+  // 取餐提醒、通知、引導
+  'track.ack': ['我知道了', 'Got it', 'わかりました'],
+  'track.readyBar': ['餐點完成了！請到攤位出示 {no} 取餐', 'Your order is ready! Show {no} at the stall.', '料理ができました！屋台で {no} を提示してください'],
+  'track.volumeTip': ['聽不清楚請調高媒體音量', 'Can\'t hear it? Turn up your media volume.', '聞こえにくい場合はメディアの音量を上げてください'],
+  'track.batteryTip': ['若收不到通知，請到手機設定把 Chrome 的電池最佳化關閉。', 'If notifications don\'t arrive, turn off battery optimization for Chrome in your phone settings.', '通知が届かない場合は、端末の設定で Chrome のバッテリー最適化をオフにしてください。'],
+  'track.pushDeniedBody': ['通知已被封鎖。請點網址列旁的設定圖示(或到瀏覽器設定 > 網站設定 > 通知)，把這個網站改為「允許」，再重新整理頁面。', 'Notifications are blocked. Tap the settings icon next to the address bar (or go to browser settings > Site settings > Notifications), set this site to "Allow", then reload the page.', '通知がブロックされています。アドレスバー横の設定アイコン（またはブラウザの設定 > サイトの設定 > 通知）から、このサイトを「許可」にして、ページを再読み込みしてください。'],
+  'track.lineTip': ['請點右上角，改用 Chrome／Safari 開啟，才能收到取餐通知', 'To receive pickup notifications, tap the menu at the top right and open this page in Chrome or Safari.', '受け取り通知を受信するには、右上のメニューから Chrome または Safari で開き直してください。'],
+  'push.promptTitle': ['開啟取餐通知', 'Turn on pickup notifications', '受け取り通知をオンにする'],
+  'push.promptBody': ['餐點完成時，我們會傳通知給你。按下按鈕後，請在跳出的視窗選「允許」。', 'We\'ll notify you when your order is ready. After tapping the button, choose "Allow" in the pop-up.', '料理ができたらお知らせします。ボタンを押したあと、表示される画面で「許可」を選んでください。'],
+  'push.later': ['稍後再說', 'Maybe later', 'あとで'],
+  'guide.button': ['引導我去攤位', 'Guide me to the stall', '屋台への行き方'],
+  'guide.soon': ['攤位位置即將公布', 'The stall location will be announced soon.', '屋台の場所はまもなく公開します。'],
+  'home.lineTip': ['請用手機相機或 QR code 掃描工具重新掃描。LINE 內無法接收取餐通知。', 'Please scan again with your camera or a QR code app. LINE\'s browser can\'t receive pickup notifications.', 'カメラまたはQRコードアプリで読み取り直してください。LINEのブラウザでは受け取り通知を受信できません。'],
+
   // 錯誤訊息(顧客可能看到的)
   'err.closed': ['攤位目前暫停接受預點，請直接到攤位點餐。', 'Pre-orders are paused. Please order at the stall.', 'ただいま事前注文を停止しています。屋台で直接ご注文ください。'],
   'err.over-limit': ['單筆預點數量超過上限，請直接到攤位點餐。', 'This order exceeds the item limit. Please order at the stall.', '注文数が上限を超えています。屋台で直接ご注文ください。'],
@@ -222,6 +248,20 @@ export function itemText(item, lang = getLang()) {
     name: tr?.name || item?.name || '',
     description: tr?.description || item?.description || '',
   };
+}
+
+// 分類名稱的翻譯
+export function categoryText(cat, lang = getLang()) {
+  if (lang === 'zh-Hant') return cat?.name || '';
+  return cat?.i18n?.[lang]?.name || cat?.name || '';
+}
+
+// 標籤的翻譯：依位置對應，沒有翻譯時顯示中文
+export function tagsText(item, lang = getLang()) {
+  const tags = item?.tags || [];
+  if (lang === 'zh-Hant') return tags;
+  const tr = item?.i18n?.[lang]?.tags || [];
+  return tags.map((tag, i) => tr[i] || tag);
 }
 
 // 口味選項的翻譯：訂單內存中文選項，依位置對應翻譯

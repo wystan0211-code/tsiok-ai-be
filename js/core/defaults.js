@@ -2,8 +2,14 @@
 
 export const DEFAULT_SETTINGS = {
   stallName: '九愛！買',
+  // 跑馬燈(菜單頁標題列下方)：bannerText 為內容、bannerActive 為開關
   bannerText: '',
   bannerActive: false,
+  // 引導我去攤位(訂單進度頁)：guideType 為 'map'(Google 地圖嵌入)或 'image'(位置圖)，未設定時顯示「即將公布」
+  guideActive: true,
+  guideType: '',
+  guideMapUrl: '',
+  guideImageVersion: 0,
   acceptingPreorders: true,
   maxItemsPerOrder: 10,
   pickupReminderMinutes: 15,
@@ -41,21 +47,29 @@ export const DEFAULT_SETTINGS = {
   },
 };
 
+// 展示模式的示範分類
+export const DEMO_CATEGORIES = [
+  { id: 'demo-cat-sweet', name: '甜點', sortOrder: 1, i18n: { en: { name: 'Desserts' }, ja: { name: 'スイーツ' } } },
+  { id: 'demo-cat-drink', name: '飲料', sortOrder: 2, i18n: { en: { name: 'Drinks' }, ja: { name: 'ドリンク' } } },
+];
+
 // 展示模式的示範品項
 export const DEMO_ITEMS = [
   {
     id: 'demo-donut', name: '甜甜圈', price: 30, description: '現炸甜甜圈，外酥內軟。',
     prepMinutes: 8, options: ['糖粉', '巧克力', '原味'], stockLimit: 60, soldCount: 0,
     active: true, soldOut: false, sortOrder: 1, hasImage: false, imageVersion: 0,
+    categoryId: 'demo-cat-sweet', featured: true, tags: ['人氣'],
     i18n: {
-      en: { name: 'Donut', description: 'Freshly fried: crispy outside, soft inside.', options: ['Powdered sugar', 'Chocolate', 'Plain'] },
-      ja: { name: 'ドーナツ', description: '揚げたてで、外はサクッと中はふんわり。', options: ['粉砂糖', 'チョコレート', 'プレーン'] },
+      en: { name: 'Donut', description: 'Freshly fried: crispy outside, soft inside.', options: ['Powdered sugar', 'Chocolate', 'Plain'], tags: ['Popular'] },
+      ja: { name: 'ドーナツ', description: '揚げたてで、外はサクッと中はふんわり。', options: ['粉砂糖', 'チョコレート', 'プレーン'], tags: ['人気'] },
     },
   },
   {
     id: 'demo-cake', name: '雞蛋糕', price: 50, description: '一份 6 顆，現烤出爐。',
     prepMinutes: 10, options: [], stockLimit: null, soldCount: 0,
     active: true, soldOut: false, sortOrder: 2, hasImage: false, imageVersion: 0,
+    categoryId: 'demo-cat-sweet', featured: true, tags: [],
     i18n: {
       en: { name: 'Taiwanese egg cakes', description: '6 pieces per serving, freshly baked.', options: [] },
       ja: { name: 'ベビーカステラ', description: '1人前6個、焼きたてです。', options: [] },
@@ -65,6 +79,7 @@ export const DEMO_ITEMS = [
     id: 'demo-tea', name: '古早味紅茶', price: 20, description: '冰涼解渴。',
     prepMinutes: 1, options: ['正常冰', '少冰'], stockLimit: null, soldCount: 0,
     active: true, soldOut: false, sortOrder: 3, hasImage: false, imageVersion: 0,
+    categoryId: 'demo-cat-drink', featured: false, tags: [],
     i18n: {
       en: { name: 'Old-fashioned black tea', description: 'Ice-cold and refreshing.', options: ['Regular ice', 'Less ice'] },
       ja: { name: '昔ながらの紅茶', description: '冷たくてすっきり。', options: ['氷普通', '氷少なめ'] },

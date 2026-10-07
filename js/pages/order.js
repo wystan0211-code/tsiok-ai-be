@@ -1,7 +1,9 @@
-// 點餐頁：驗證一次性連結、瀏覽菜單、購物車、填寫姓氏電話並送出
+// 點餐頁：驗證一次性連結、菜單(跑馬燈、橫幅輪播、分類列、推薦區)、品項詳細頁、確認訂單並送出
+// 畫面以網址 hash 切換：無 hash 為菜單、#item=品項ID 為詳細頁、#checkout 為確認訂單
+// 按手機或瀏覽器的返回鍵會直接回到上一個畫面，不顯示等待畫面
 import { api, IS_DEMO } from '../api/index.js';
 import {
-  $, icon, toast, openDialog, alertDialog, showDemoBanner, withBusy,
+  $, $$, icon, toast, alertDialog, showDemoBanner, withBusy,
 } from '../core/ui.js';
 import { errorText } from '../core/errors.js';
 import { store } from '../core/storage.js';
@@ -12,7 +14,9 @@ import {
 import { goTo, pageReady } from '../core/transition.js';
 import {
   t, getLang, itemCount, totalMoney, itemText, optionText, settingText, withOption,
+  categoryText, tagsText,
 } from '../core/i18n.js';
+import { itemImageRefs } from '../core/images.js';
 
 showDemoBanner(IS_DEMO);
 
@@ -20,14 +24,21 @@ const CART_KEY = 'tab-cart';
 const FORM_KEY = 'tab-checkout';
 const HISTORY_KEY = 'tab-history';
 const token = new URLSearchParams(location.search).get('t') || '';
+const AUTOPLAY_MS = 5000; // 橫幅每 5 秒換一張，使用者操作後 5 秒沒有動作才繼續
 
 let settings = null;
 let menu = [];
-let images = {};
+let categories = [];
+let banners = [];
+let covers = {}; // 品項封面小圖
 let cart = store.get(CART_KEY, { lines: [] });
 let ready = false;
+let pushedFromMenu = false; // 詳細頁或確認訂單是否由菜單點進來(決定返回鍵用 history.back)
+let menuScrollY = 0;
 
 const itemsById = () => Object.fromEntries(menu.map((i) => [i.id, i]));
+const stockLeft = (item) => (item.stockLimit != null ? Math.max(0, item.stockLimit - (item.soldCount || 0)) : null);
+const isSoldOut = (item) => item.soldOut || stockLeft(item) === 0;
 
 // 儲存購物車；菜單載入後才移除已下架的品項，避免載入前把購物車清空
 function saveCart() {
@@ -60,24 +71,32 @@ function changeLine(index, delta) {
 function showState(name) {
   for (const s of ['loading', 'invalid', 'closed']) $(`#state-${s}`).hidden = s !== name;
   if (name) {
-    $('#view-menu').hidden = true;
-    $('#view-checkout').hidden = true;
+    for (const v of ['menu', 'detail', 'checkout']) $(`#view-${v}`).hidden = true;
     $('#cart-bar').hidden = true;
-    $('#back-menu').hidden = true;
+    $('#detail-bar').hidden = true;
+    $('#marquee').hidden = true;
   }
 }
 
 function currentView() {
-  return location.hash === '#checkout' && cart.lines.length ? 'checkout' : 'menu';
+  const hash = decodeURIComponent(location.hash || '');
+  if (hash === '#checkout' && cart.lines.length) return { name: 'checkout' };
+  if (hash.startsWith('#item=')) {
+    const id = hash.slice(6);
+    if (itemsById()[id]) return { name: 'detail', id };
+  }
+  return { name: 'menu' };
 }
 
+function navigate(hash) {
+  if (currentView().name === 'menu') menuScrollY = window.scrollY;
+  pushedFromMenu = true;
+  location.hash = hash;
+}
+
+let lastViewKey = '';
 function render() {
   if (!ready || !settings) return;
-  const banner = $('#banner');
-  const bannerText = settingText(settings, 'bannerText');
-  banner.hidden = !(settings.bannerActive && bannerText);
-  banner.innerHTML = `${icon('campaign')}<p>${escapeHtml(bannerText)}</p>`;
-
   if (!settings.acceptingPreorders) {
     showState('closed');
     pageReady();
@@ -86,70 +105,463 @@ function render() {
   showState(null);
   pageReady();
   const view = currentView();
-  $('#view-menu').hidden = view !== 'menu';
-  $('#view-checkout').hidden = view !== 'checkout';
-  $('#back-menu').hidden = view !== 'checkout';
-  renderMenu();
-  renderCartBar(view);
-  if (view === 'checkout') renderCheckout();
+  const viewKey = view.name + (view.id || '');
+  $('#view-menu').hidden = view.name !== 'menu';
+  $('#view-detail').hidden = view.name !== 'detail';
+  $('#view-checkout').hidden = view.name !== 'checkout';
+  // 返回鍵：菜單回首頁，詳細頁與確認訂單回菜單
+  $('#back-btn').setAttribute('aria-label', view.name === 'menu' ? t('common.backHome') : t('order.back'));
+  renderMarquee(view.name === 'menu');
+  renderCartBar(view.name);
+  if (view.name === 'menu') {
+    renderMenu();
+    if (lastViewKey && lastViewKey !== viewKey) requestAnimationFrame(() => window.scrollTo(0, menuScrollY));
+  }
+  if (view.name === 'detail') renderDetail(view.id, lastViewKey !== viewKey);
+  if (view.name === 'checkout') renderCheckout();
+  if (view.name !== 'menu' && lastViewKey !== viewKey) window.scrollTo(0, 0);
+  $('#detail-bar').hidden = view.name !== 'detail';
+  lastViewKey = viewKey;
 }
 
+$('#back-btn').addEventListener('click', (e) => {
+  if (currentView().name === 'menu') return; // 連結本身就是回首頁
+  e.preventDefault();
+  if (pushedFromMenu) history.back();
+  else location.replace('#');
+});
+
+window.addEventListener('hashchange', () => {
+  if (!location.hash) pushedFromMenu = false;
+  render();
+});
+
+// ===== 跑馬燈(黑底黃字，持續捲動、不暫停) =====
+let marqueeText = '';
+function renderMarquee(show) {
+  const box = $('#marquee');
+  const text = settingText(settings, 'bannerText');
+  box.hidden = !(show && settings.bannerActive && text);
+  if (box.hidden || text === marqueeText) return;
+  marqueeText = text;
+  for (const el of $$('.marquee__text', box)) el.textContent = text;
+  // 速度固定約每秒 60px，文字越長跑越久
+  requestAnimationFrame(() => {
+    const w = $('.marquee__text', box).offsetWidth;
+    box.style.setProperty('--marquee-duration', `${Math.max(8, w / 60)}s`);
+  });
+}
+
+// ===== 橫幅輪播 =====
+const carousel = {
+  index: 0,
+  timer: null,
+  lastInteract: 0,
+  holding: false,
+  programmatic: false,
+};
+
+function renderCarousel() {
+  const box = $('#carousel');
+  box.hidden = banners.length === 0;
+  const track = $('#carousel-track');
+  track.innerHTML = banners.map((b, i) => `<img class="carousel__slide" src="${b.data}" alt="" draggable="false" ${i ? 'loading="lazy"' : ''}>`).join('');
+  $('#carousel-dots').innerHTML = banners.map(() => '<span class="carousel__dot"></span>').join('');
+  box.classList.toggle('carousel--single', banners.length < 2);
+  carousel.index = 0;
+  track.scrollLeft = 0;
+  updateDots();
+  scheduleAutoplay();
+}
+
+function updateDots() {
+  $$('.carousel__dot').forEach((d, i) => d.classList.toggle('is-active', i === carousel.index));
+}
+
+function goSlide(i, smooth = true) {
+  const track = $('#carousel-track');
+  const n = banners.length;
+  if (!n) return;
+  carousel.index = (i + n) % n;
+  carousel.lastInteract = Date.now(); // 換張後重新計時 5 秒
+  carousel.programmatic = true;
+  track.scrollTo({ left: carousel.index * track.clientWidth, behavior: smooth ? 'smooth' : 'auto' });
+  updateDots();
+  setTimeout(() => { carousel.programmatic = false; }, 700);
+}
+
+function scheduleAutoplay() {
+  clearInterval(carousel.timer);
+  if (banners.length < 2) return;
+  carousel.timer = setInterval(() => {
+    const visible = !$('#carousel').hidden && !$('#view-menu').hidden && !document.hidden;
+    if (!visible || carousel.holding || Date.now() - carousel.lastInteract < AUTOPLAY_MS) return;
+    goSlide(carousel.index + 1);
+  }, 1000);
+  carousel.lastInteract = Date.now();
+}
+
+function touchCarousel() {
+  carousel.lastInteract = Date.now();
+}
+
+(() => {
+  const box = $('#carousel');
+  const track = $('#carousel-track');
+  // 按住圖片：暫停並隱藏箭頭與圓點，放開後恢復
+  // 手機用 touch 事件判斷(滑動時 pointer 事件會被瀏覽器中斷)，電腦用滑鼠
+  const hold = () => {
+    carousel.holding = true;
+    box.classList.add('is-holding');
+    touchCarousel();
+  };
+  const release = () => {
+    if (!carousel.holding) return;
+    carousel.holding = false;
+    box.classList.remove('is-holding');
+    touchCarousel();
+  };
+  track.addEventListener('touchstart', hold, { passive: true });
+  track.addEventListener('touchend', release, { passive: true });
+  track.addEventListener('touchcancel', release, { passive: true });
+  track.addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse') hold(); });
+  ['pointerup', 'pointerleave'].forEach((ev) => track.addEventListener(ev, (e) => { if (e.pointerType === 'mouse') release(); }));
+  // 手指滑動後，依停下的位置更新目前張數
+  let scrollTimer = null;
+  track.addEventListener('scroll', () => {
+    if (!carousel.programmatic) touchCarousel();
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => {
+      const i = Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
+      if (i !== carousel.index) {
+        carousel.index = i;
+        updateDots();
+      }
+    }, 80);
+  }, { passive: true });
+  box.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-carousel]');
+    if (!btn) return;
+    touchCarousel();
+    goSlide(carousel.index + (btn.dataset.carousel === 'next' ? 1 : -1));
+  });
+  window.addEventListener('resize', () => goSlide(carousel.index, false));
+})();
+
+// ===== 菜單 =====
+function sectionsData() {
+  const list = [];
+  const featured = menu.filter((i) => i.featured).slice(0, 5);
+  if (featured.length) list.push({ id: 'featured', title: t('menu.featured'), items: featured, featured: true });
+  const known = new Set(categories.map((c) => c.id));
+  for (const c of categories) {
+    const items = menu.filter((i) => i.categoryId === c.id);
+    if (items.length) list.push({ id: c.id, title: categoryText(c), items: sortSoldOutLast(items) });
+  }
+  const rest = menu.filter((i) => !i.categoryId || !known.has(i.categoryId));
+  if (rest.length) {
+    // 沒有建立任何分類時不顯示標題
+    list.push({ id: 'other', title: categories.length ? t('menu.other') : '', items: sortSoldOutLast(rest) });
+  }
+  return list;
+}
+
+// 售完的品項排在該分類最後
+function sortSoldOutLast(items) {
+  return items.slice().sort((a, b) => Number(isSoldOut(a)) - Number(isSoldOut(b)));
+}
+
+function coverHtml(item, cls) {
+  return covers[item.id]
+    ? `<img class="${cls}" src="${covers[item.id]}" alt="" loading="lazy">`
+    : `<div class="${cls} ${cls}--empty">${icon('restaurant')}</div>`;
+}
+
+function addButton(item) {
+  const name = escapeHtml(itemText(item).name);
+  if (isSoldOut(item)) return `<span class="mi__soldout">${t('order.soldOut')}</span>`;
+  const qty = qtyOf(item.id);
+  return `${qty ? `<span class="mi__qty" aria-label="${t('order.addedCount', { n: qty })}">${qty}</span>` : ''}
+    <button type="button" class="btn-add mi__add press" data-add="${item.id}" aria-label="${t('order.add', { name })}">${icon('add')}</button>`;
+}
+
+function rowHtml(item) {
+  const tx = itemText(item);
+  const left = stockLeft(item);
+  const showLeft = settings.showStockLeft !== false && left != null && left > 0 && left <= 10;
+  const tags = tagsText(item);
+  return `<article class="mi ${isSoldOut(item) ? 'mi--soldout' : ''}" data-open="${item.id}" tabindex="0" role="button" aria-label="${escapeHtml(tx.name)}">
+    <div class="mi__text">
+      <h3 class="mi__name">${escapeHtml(tx.name)}</h3>
+      ${tx.description ? `<p class="mi__desc">${escapeHtml(tx.description.split('\n')[0])}</p>` : ''}
+      <p class="mi__price">${money(item.price)}</p>
+      ${(tags.length || showLeft) ? `<p class="mi__tags">${tags.map((tg) => `<span class="tag">${escapeHtml(tg)}</span>`).join('')}${showLeft ? `<span class="badge badge--warning">${t('order.left', { n: left })}</span>` : ''}</p>` : ''}
+    </div>
+    <div class="mi__media">
+      ${coverHtml(item, 'mi__img')}
+      ${addButton(item)}
+    </div>
+  </article>`;
+}
+
+function featuredHtml(item) {
+  const tx = itemText(item);
+  return `<article class="fc ${isSoldOut(item) ? 'mi--soldout' : ''}" data-open="${item.id}" tabindex="0" role="button" aria-label="${escapeHtml(tx.name)}">
+    <div class="fc__media">
+      ${coverHtml(item, 'fc__img')}
+      ${addButton(item)}
+    </div>
+    <h3 class="fc__name">${escapeHtml(tx.name)}</h3>
+    <p class="fc__price">${money(item.price)}</p>
+  </article>`;
+}
+
+let sections = [];
 function renderMenu() {
-  const list = $('#menu-list');
+  const box = $('#menu-sections');
   if (!menu.length) {
-    list.innerHTML = `<p class="empty">${t('order.emptyMenu')}</p>`;
+    box.innerHTML = `<p class="empty">${t('order.emptyMenu')}</p>`;
+    $('#cat-bar').hidden = true;
     return;
   }
-  list.innerHTML = menu.map((item) => {
-    const qty = qtyOf(item.id);
-    const tx = itemText(item);
-    const name = escapeHtml(tx.name);
-    const left = item.stockLimit != null ? Math.max(0, item.stockLimit - (item.soldCount || 0)) : null;
-    const soldOut = item.soldOut || left === 0;
-    const img = images[item.id]
-      ? `<img class="menu-item__img" src="${images[item.id]}" alt="" loading="lazy">`
-      : `<div class="menu-item__img">${icon('restaurant')}</div>`;
-    let control;
-    if (soldOut) control = `<span class="badge badge--danger">${t('order.soldOut')}</span>`;
-    else if (item.options?.length) {
-      // 有選項的品項：加號開啟選項視窗，旁邊顯示已加入的數量
-      control = `${qty ? `<span class="muted text-sm" aria-label="${t('order.addedCount', { n: qty })}">×${qty}</span>` : ''}
-        <button type="button" class="btn-add press" data-action="choose" data-id="${item.id}" aria-label="${t('order.add', { name })}">${icon('add')}</button>`;
-    } else if (qty) {
-      control = `<div class="stepper">
-          <button type="button" class="press" data-action="minus" data-id="${item.id}" aria-label="${t('order.decrease', { name })}">${icon('remove', 'icon--sm')}</button>
-          <span class="stepper__value" aria-live="polite">${qty}</span>
-          <button type="button" class="press" data-action="plus" data-id="${item.id}" aria-label="${t('order.increase', { name })}">${icon('add', 'icon--sm')}</button>
-        </div>`;
-    } else {
-      control = `<button type="button" class="btn-add press" data-action="plus" data-id="${item.id}" aria-label="${t('order.add', { name })}">${icon('add')}</button>`;
-    }
-    const showLeft = settings.showStockLeft !== false && left != null && left > 0 && left <= 10;
-    return `<article class="menu-item ${soldOut ? 'menu-item--soldout' : ''}">
-      ${img}
-      <div class="menu-item__body">
-        <h3 class="menu-item__name">${name}</h3>
-        ${tx.description ? `<p class="menu-item__desc">${escapeHtml(tx.description)}</p>` : ''}
-        <p class="row text-sm muted">
-          ${item.prepMinutes ? `<span class="row" style="gap:2px">${icon('schedule', 'icon--sm')}${t('order.prep', { n: item.prepMinutes })}</span>` : ''}
-          ${showLeft ? `<span class="badge badge--warning">${t('order.left', { n: left })}</span>` : ''}
-        </p>
-        <div class="menu-item__foot">
-          <span class="menu-item__price">${money(item.price)}</span>
-          <div class="menu-item__control">${control}</div>
-        </div>
-      </div>
-    </article>`;
-  }).join('');
+  sections = sectionsData();
+  box.innerHTML = sections.map((s) => `
+    <section class="menu-sec" id="sec-${s.id}" data-sec="${s.id}">
+      ${s.title ? `<h2 class="menu-sec__title">${escapeHtml(s.title)}</h2>` : ''}
+      ${s.featured
+        ? `<div class="fc-row">${s.items.map(featuredHtml).join('')}</div>`
+        : `<div class="mi-list">${s.items.map(rowHtml).join('')}</div>`}
+    </section>`).join('');
+  const titled = sections.filter((s) => s.title);
+  $('#cat-bar').hidden = titled.length < 2;
+  const active = $('.cat-chip.is-active')?.dataset.target;
+  $('#cat-track').innerHTML = titled.map((s) => `
+    <button type="button" class="cat-chip ${s.id === active ? 'is-active' : ''}" data-target="${s.id}">${escapeHtml(s.title)}</button>`).join('');
+  if (!active) spy();
 }
 
-function renderCartBar(view) {
+// 點分類：捲到該分類
+$('#cat-track').addEventListener('click', (e) => {
+  const chip = e.target.closest('[data-target]');
+  if (!chip) return;
+  const sec = $(`#sec-${CSS.escape(chip.dataset.target)}`);
+  if (!sec) return;
+  setActiveChip(chip.dataset.target);
+  spyPausedUntil = Date.now() + 800;
+  window.scrollTo({ top: sec.getBoundingClientRect().top + window.scrollY - stickyOffset() + 1, behavior: 'smooth' });
+});
+
+function stickyOffset() {
+  const top = $('.topbar').offsetHeight;
+  const bar = $('#cat-bar');
+  return top + (bar.hidden ? 0 : bar.offsetHeight) + 8;
+}
+
+// 目前看到的分類：分類列跟著標示，並順暢地捲到看得到的位置
+function setActiveChip(id) {
+  const track = $('#cat-track');
+  let chip = null;
+  for (const c of $$('.cat-chip', track)) {
+    const on = c.dataset.target === id;
+    c.classList.toggle('is-active', on);
+    if (on) chip = c;
+  }
+  if (chip) {
+    const left = chip.offsetLeft - (track.clientWidth - chip.offsetWidth) / 2;
+    track.scrollTo({ left: Math.max(0, left), behavior: 'smooth' });
+  }
+}
+
+let spyPausedUntil = 0;
+let spyFrame = 0;
+function spy() {
+  if ($('#view-menu').hidden || $('#cat-bar').hidden || Date.now() < spyPausedUntil) return;
+  const offset = stickyOffset() + 4;
+  let current = null;
+  const secs = $$('.menu-sec').filter((sec) => $('.menu-sec__title', sec));
+  for (const sec of secs) {
+    if (sec.getBoundingClientRect().top <= offset) current = sec.dataset.sec;
+  }
+  // 已捲到最底：最後一個分類的標題可能到不了頂端，直接標示最後一個
+  const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+  if (atBottom && secs.length) current = secs[secs.length - 1].dataset.sec;
+  current ??= $('.menu-sec .menu-sec__title')?.closest('.menu-sec')?.dataset.sec;
+  if (current && current !== $('.cat-chip.is-active')?.dataset.target) setActiveChip(current);
+}
+
+window.addEventListener('scroll', () => {
+  cancelAnimationFrame(spyFrame);
+  spyFrame = requestAnimationFrame(spy);
+}, { passive: true });
+
+// 點品項開啟詳細頁；點 + 直接加入(有口味選項時改開啟詳細頁)
+$('#menu-sections').addEventListener('click', (e) => {
+  const add = e.target.closest('[data-add]');
+  if (add) {
+    e.stopPropagation();
+    const item = itemsById()[add.dataset.add];
+    if (!item) return;
+    if (item.options?.length) navigate(`#item=${item.id}`);
+    else addToCart(item.id, null, 1);
+    return;
+  }
+  const row = e.target.closest('[data-open]');
+  if (row) navigate(`#item=${row.dataset.open}`);
+});
+
+$('#menu-sections').addEventListener('keydown', (e) => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-open]')) {
+    e.preventDefault();
+    navigate(`#item=${e.target.dataset.open}`);
+  }
+});
+
+function renderCartBar(viewName) {
   const count = countItems(cart.lines);
   const { total } = priceLines(cart.lines, itemsById());
-  $('#cart-bar').hidden = view !== 'menu' || count === 0;
+  $('#cart-bar').hidden = viewName !== 'menu' || count === 0;
   $('#cart-bar-text').textContent = t('order.cartBar', { count: itemCount(count), total: money(total) });
 }
 
+// ===== 品項詳細頁 =====
+const detail = { id: null, qty: 1, large: {}, refs: [] };
+
+function renderDetail(id, fresh) {
+  const item = itemsById()[id];
+  if (!item) return;
+  const tx = itemText(item);
+  if (fresh || detail.id !== id) {
+    detail.id = id;
+    detail.qty = 1;
+    detail.refs = itemImageRefs(item);
+    renderGallery(item);
+    loadLarge(item);
+  }
+  $('#d-name').textContent = tx.name;
+  $('#d-price').textContent = money(item.price);
+  const left = stockLeft(item);
+  const showLeft = settings.showStockLeft !== false && left != null && left > 0 && left <= 10;
+  $('#d-meta').innerHTML = [
+    item.prepMinutes ? `<span class="row" style="gap:2px">${icon('schedule', 'icon--sm')}${t('order.prep', { n: item.prepMinutes })}</span>` : '',
+    ...tagsText(item).map((tg) => `<span class="tag">${escapeHtml(tg)}</span>`),
+    showLeft ? `<span class="badge badge--warning">${t('order.left', { n: left })}</span>` : '',
+  ].join('');
+  $('#d-desc').textContent = tx.description;
+  $('#d-desc').hidden = !tx.description;
+
+  const opts = item.options || [];
+  $('#d-options').hidden = !opts.length;
+  if (fresh || $('#d-option-list').dataset.item !== id) {
+    $('#d-option-list').dataset.item = id;
+    $('#d-option-list').innerHTML = opts.map((opt, i) => `
+      <label class="radio-chip"><input type="radio" name="d-option" value="${escapeHtml(opt)}" ${i === 0 ? 'checked' : ''}><span>${escapeHtml(optionText(item, opt))}</span></label>`).join('');
+  }
+  updateDetailBar(item);
+}
+
+function updateDetailBar(item) {
+  $('#d-qty').textContent = detail.qty;
+  const btn = $('#detail-add');
+  const soldOut = isSoldOut(item);
+  btn.disabled = soldOut;
+  btn.textContent = soldOut ? t('order.soldOut') : t('detail.addWithPrice', { price: money(item.price * detail.qty) });
+}
+
+function renderGallery(item) {
+  const track = $('#gallery-track');
+  const n = detail.refs.length;
+  if (!n) {
+    track.innerHTML = `<div class="gallery__slide gallery__slide--empty">${icon('restaurant')}</div>`;
+  } else {
+    // 先用封面小圖(已在菜單載入)，大圖載入後再替換
+    track.innerHTML = detail.refs.map((r, i) => `
+      <button type="button" class="gallery__slide" data-photo="${i}" aria-label="${t('detail.photo', { i: i + 1, n })}">
+        ${i === 0 && covers[item.id] ? `<img src="${covers[item.id]}" alt="">` : `<span class="gallery__loading">${icon('progress_activity', 'spin')}</span>`}
+      </button>`).join('');
+  }
+  track.scrollLeft = 0;
+  const count = $('#gallery-count');
+  count.hidden = n < 2;
+  count.textContent = `1 / ${n}`;
+}
+
+async function loadLarge(item) {
+  const id = item.id;
+  try {
+    const large = await api.getImages(detail.refs, 'l');
+    if (detail.id !== id) return;
+    detail.large = large;
+    detail.refs.forEach((r, i) => {
+      const slide = $(`.gallery__slide[data-photo="${i}"]`);
+      if (slide && large[r.id]) slide.innerHTML = `<img src="${large[r.id]}" alt="">`;
+    });
+  } catch (err) {
+    console.warn('照片載入失敗', err);
+  }
+}
+
+$('#gallery-track').addEventListener('scroll', () => {
+  const track = $('#gallery-track');
+  const i = Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
+  $('#gallery-count').textContent = `${i + 1} / ${detail.refs.length}`;
+}, { passive: true });
+
+// 點照片：全螢幕檢視(可左右滑動、雙指放大)
+$('#gallery-track').addEventListener('click', (e) => {
+  const slide = e.target.closest('[data-photo]');
+  if (!slide) return;
+  openViewer(Number(slide.dataset.photo));
+});
+
+function openViewer(start) {
+  const item = itemsById()[detail.id];
+  const srcs = detail.refs.map((r, i) => detail.large[r.id] || (i === 0 ? covers[item?.id] : '') || '');
+  const viewer = $('#viewer');
+  const track = $('#viewer-track');
+  track.innerHTML = srcs.map((src) => `<div class="viewer__slide">${src ? `<img src="${src}" alt="">` : icon('progress_activity', 'spin')}</div>`).join('');
+  viewer.hidden = false;
+  document.body.classList.add('is-viewer-open');
+  track.scrollLeft = start * track.clientWidth;
+  $('#viewer-count').textContent = `${start + 1} / ${srcs.length}`;
+  $('#viewer-close').focus();
+}
+
+function closeViewer() {
+  $('#viewer').hidden = true;
+  document.body.classList.remove('is-viewer-open');
+}
+
+$('#viewer-close').addEventListener('click', closeViewer);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('#viewer').hidden) closeViewer();
+});
+$('#viewer-track').addEventListener('scroll', () => {
+  const track = $('#viewer-track');
+  const i = Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
+  $('#viewer-count').textContent = `${i + 1} / ${detail.refs.length}`;
+}, { passive: true });
+window.addEventListener('hashchange', closeViewer);
+
+$('#view-detail').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-detail]');
+  if (!btn) return;
+  const max = settings?.maxItemsPerOrder || 10;
+  detail.qty = Math.max(1, Math.min(max, detail.qty + (btn.dataset.detail === 'plus' ? 1 : -1)));
+  updateDetailBar(itemsById()[detail.id]);
+});
+
+$('#detail-add').addEventListener('click', () => {
+  const item = itemsById()[detail.id];
+  if (!item || isSoldOut(item)) return;
+  const option = item.options?.length ? $('input[name=d-option]:checked')?.value || item.options[0] : null;
+  addToCart(item.id, option, detail.qty);
+  const name = itemText(item).name;
+  toast(t('order.addedToast', { item: option ? withOption(name, optionText(item, option)) : name, qty: detail.qty }));
+  if (pushedFromMenu) history.back();
+  else location.replace('#');
+});
+
+// ===== 確認訂單 =====
 function renderCheckout() {
   const map = itemsById();
   const priced = priceLines(cart.lines, map);
@@ -183,53 +595,18 @@ function renderCheckout() {
   $('#consent-text').textContent = settingText(settings, 'consentText');
 }
 
-// ===== 互動 =====
-document.addEventListener('click', async (e) => {
+$('#view-checkout').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
-  const { action, id } = btn.dataset;
-  if (action === 'plus') addToCart(id, null, 1);
-  if (action === 'minus') {
-    const idx = cart.lines.findIndex((l) => l.itemId === id);
-    if (idx >= 0) changeLine(idx, -1);
-  }
-  if (action === 'line-plus') changeLine(Number(btn.dataset.index), 1);
-  if (action === 'line-minus') changeLine(Number(btn.dataset.index), -1);
-  if (action === 'choose') chooseOption(id);
+  if (btn.dataset.action === 'line-plus') changeLine(Number(btn.dataset.index), 1);
+  if (btn.dataset.action === 'line-minus') changeLine(Number(btn.dataset.index), -1);
 });
 
-async function chooseOption(itemId) {
-  const item = itemsById()[itemId];
-  if (!item) return;
-  const name = itemText(item).name;
-  const { value, data } = await openDialog({
-    title: name,
-    body: `
-      <fieldset class="field" style="border:none;padding:0;margin:0">
-        <legend class="field__label">${t('order.optionLegend')}</legend>
-        <div class="radio-group">
-          ${item.options.map((opt, i) => `<label class="radio-chip"><input type="radio" name="option" value="${escapeHtml(opt)}" ${i === 0 ? 'checked' : ''}><span>${escapeHtml(optionText(item, opt))}</span></label>`).join('')}
-        </div>
-      </fieldset>
-      <label class="field">
-        <span class="field__label">${t('order.qty')}</span>
-        <input class="input" type="number" name="qty" min="1" max="${settings.maxItemsPerOrder}" value="1" required>
-      </label>`,
-    actions: [{ label: t('order.addBtn'), value: 'add' }],
-  });
-  if (value !== 'add') return;
-  const qty = Math.max(1, Math.min(settings.maxItemsPerOrder, Number(data.get('qty')) || 1));
-  const opt = optionText(item, data.get('option'));
-  addToCart(itemId, data.get('option'), qty);
-  toast(t('order.addedToast', { item: withOption(name, opt), qty }));
-}
-
-$('#back-menu').addEventListener('click', (e) => {
+// 查看訂單：記住菜單位置，返回時回到原處
+$('#cart-bar a').addEventListener('click', (e) => {
   e.preventDefault();
-  history.back();
+  navigate('#checkout');
 });
-
-window.addEventListener('hashchange', render);
 
 // 表單草稿存在本機，重新整理不會消失
 const form = $('#checkout-form');
@@ -303,10 +680,10 @@ async function submit() {
 }
 
 // ===== 初始化 =====
-async function loadImages() {
+async function loadCovers() {
   try {
-    images = await api.getItemImages(menu);
-    renderMenu();
+    covers = await api.getItemImages(menu);
+    if (currentView().name === 'menu') renderMenu();
   } catch (err) {
     console.warn('圖片載入失敗', err);
   }
@@ -337,15 +714,25 @@ async function init() {
     settings = s;
     render();
   });
+  api.watchCategories((list) => {
+    categories = list;
+    render();
+  });
+  api.watchBanners((list) => {
+    const key = list.map((b) => b.id).join('|');
+    const changed = key !== banners.map((b) => b.id).join('|');
+    banners = list;
+    if (changed) renderCarousel();
+  });
   let lastImageKey = '';
   api.watchMenu((items) => {
     menu = items;
     saveCart();
     render();
-    const key = items.map((i) => `${i.id}:${i.imageVersion || 0}`).join('|');
+    const key = items.map((i) => `${i.id}:${(i.images || []).join(',')}:${i.imageVersion || 0}`).join('|');
     if (key !== lastImageKey) {
       lastImageKey = key;
-      loadImages();
+      loadCovers();
     }
   });
 }

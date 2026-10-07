@@ -1,7 +1,7 @@
 // 訂單進度頁：即時顯示狀態、預估時間、攤位訊息，並提供開啟推播、取消、找回訂單
 import { api, IS_DEMO } from '../api/index.js';
 import {
-  $, icon, toast, confirmDialog, showDemoBanner, withBusy,
+  $, icon, toast, confirmDialog, openDialog, showDemoBanner, withBusy,
 } from '../core/ui.js';
 import { errorText } from '../core/errors.js';
 import { store } from '../core/storage.js';
@@ -14,7 +14,12 @@ import {
 import {
   t, getLang, itemText, optionText, totalMoney, withOption,
 } from '../core/i18n.js';
-import { beep, vibrate, unlockAudio } from '../core/sound.js';
+import {
+  beep, vibrate, unlockAudio, startAlarm, stopAlarm,
+} from '../core/sound.js';
+import {
+  isIOS, isAndroid, isStandalone, isLineInApp,
+} from '../core/env.js';
 import { goTo, pageReady } from '../core/transition.js';
 
 const CANCEL_WINDOW_MS = 3 * 60 * 1000; // 送出後 3 分鐘內可取消(安全規則也有相同限制)
@@ -30,11 +35,130 @@ let order = null;
 let prevOrder = null;
 let itemsById = {};
 let firstSnapshot = true;
+let settings = null;
+let promptPush = params.get('new') === '1'; // 剛送出訂單：顯示開啟通知的提示卡片
 
 function show(view) {
   $('#state-loading').hidden = view !== 'loading';
   $('#view-find').hidden = view !== 'find';
   $('#view-order').hidden = view !== 'order';
+  // 返回鍵：找回訂單畫面顯示；訂單進行中隱藏，結束後才顯示
+  $('#back-btn').hidden = !(view === 'find' || (view === 'order' && isFinal(order)));
+}
+
+// ===== 可取餐提醒(呼吸效果 + 提醒列 + 重複提示音，按「我知道了」停止) =====
+const ackKey = (id) => `tab-ack-${id}`;
+const isAcked = () => !!order && store.get(ackKey(order.id), false);
+
+function renderReady() {
+  const ready = order.status === 'ready';
+  const alerting = ready && !isAcked();
+  $('#o-hero').classList.toggle('order-hero--ready', ready);
+  $('#o-hero').classList.toggle('is-breathing', alerting);
+  $('#ready-bar').hidden = !alerting;
+  $('#ready-bar-text').textContent = t('track.readyBar', { no: order.no });
+  if (!ready) stopAlarm();
+}
+
+$('#ready-ack').addEventListener('click', () => {
+  stopAlarm();
+  if (order) store.set(ackKey(order.id), true);
+  renderReady();
+});
+
+// ===== 螢幕常亮：等待取餐期間不讓螢幕變暗(切換分頁或 App 會自動解除，回來時重新請求) =====
+let wakeLock = null;
+async function updateWakeLock() {
+  const want = !!order && !isFinal(order) && !document.hidden;
+  try {
+    if (want && !wakeLock && 'wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!want && wakeLock) {
+      await wakeLock.release();
+      wakeLock = null;
+    }
+  } catch {
+    // 省電模式等情況可能被系統拒絕，不影響其他功能
+    wakeLock = null;
+  }
+}
+document.addEventListener('visibilitychange', updateWakeLock);
+
+// ===== 引導我去攤位 =====
+let guideKey = '';
+function renderGuide() {
+  const box = $('#o-guide');
+  box.hidden = !settings || settings.guideActive === false || !order || isFinal(order);
+  if (box.hidden) return;
+  const key = [settings.guideType, settings.guideMapUrl, settings.guideImageVersion, getLang()].join('|');
+  if (key === guideKey) return;
+  guideKey = key;
+  const body = $('#guide-body');
+  const mapUrl = settings.guideMapUrl || '';
+  if (settings.guideType === 'map' && /^https:\/\/www\.google\.com\/maps\/embed\?/.test(mapUrl)) {
+    body.innerHTML = `<iframe class="guide__map" src="${escapeHtml(mapUrl)}" title="${escapeHtml(t('guide.button'))}" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>`;
+  } else if (settings.guideType === 'image' && settings.guideImageVersion) {
+    body.innerHTML = `<span class="loading">${icon('progress_activity', 'spin')}</span>`;
+    api.getSiteImage('guide').then((data) => {
+      body.innerHTML = data
+        ? `<img class="guide__img" src="${data}" alt="${escapeHtml(t('guide.button'))}">`
+        : `<p class="muted">${t('guide.soon')}</p>`;
+    }).catch(() => { body.innerHTML = `<p class="muted">${t('guide.soon')}</p>`; });
+  } else {
+    body.innerHTML = `<p class="muted">${t('guide.soon')}</p>`;
+  }
+}
+
+$('#guide-toggle').addEventListener('click', () => {
+  const btn = $('#guide-toggle');
+  const open = btn.getAttribute('aria-expanded') !== 'true';
+  btn.setAttribute('aria-expanded', String(open));
+  $('#guide-body').hidden = !open;
+});
+
+// ===== 送出訂單後的開啟通知提示 =====
+// 系統權限視窗只能在使用者點擊時跳出，所以先顯示提示卡片，由顧客點按鈕
+function notifyBlocker() {
+  if (isLineInApp()) return t('track.lineTip');
+  if (IS_DEMO) return t('track.pushDemo');
+  if (isIOS() && !isStandalone()) return t('track.iosBody');
+  if ('Notification' in window && Notification.permission === 'denied') return t('track.pushDeniedBody');
+  return '';
+}
+
+async function maybePromptPush() {
+  if (!promptPush || !order || order.pushEnabled || isFinal(order)) return;
+  promptPush = false;
+  const blocker = notifyBlocker();
+  if (blocker) {
+    await openDialog({
+      title: t('push.promptTitle'),
+      body: `<p>${escapeHtml(blocker)}</p>`,
+      actions: [{ label: t('common.gotIt'), value: 'ok' }],
+      cancelLabel: '',
+    });
+    return;
+  }
+  await openDialog({
+    title: t('push.promptTitle'),
+    body: `<p>${escapeHtml(t('push.promptBody'))}</p>
+      <button type="button" class="btn btn--primary btn--lg btn--block" data-push-now>${icon('notifications_active')}${escapeHtml(t('track.enablePush'))}</button>`,
+    actions: [],
+    cancelLabel: t('push.later'),
+    onOpen(dlg) {
+      const btn = dlg.querySelector('[data-push-now]');
+      btn.addEventListener('click', () => withBusy(btn, async () => {
+        try {
+          await api.enablePush(order.id);
+          toast(t('track.pushOn'), 'success');
+          dlg.close('ok');
+        } catch (err) {
+          toast(errorText(err), 'danger', 5000);
+        }
+      }));
+    },
+  });
 }
 
 // ===== 找回訂單 =====
@@ -83,15 +207,6 @@ const STEP_KEYS = {
 };
 const STEP_INDEX = { pending: 0, accepted: 1, ready: 2, picked: 3 };
 
-function isIOS() {
-  return /iphone|ipad|ipod/i.test(navigator.userAgent)
-    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-}
-
-function isStandalone() {
-  return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-}
-
 function renderNotify() {
   const box = $('#o-notify');
   if (isFinal(order) || order.status === 'ready') {
@@ -99,8 +214,17 @@ function renderNotify() {
     return;
   }
   box.hidden = false;
+  if (isLineInApp()) {
+    box.innerHTML = `<p class="row">${icon('notifications_off')}<strong>${t('track.pushTitle')}</strong></p><p class="text-sm" style="color:var(--color-danger)">${escapeHtml(t('track.lineTip'))}</p>`;
+    return;
+  }
   if (order.pushEnabled) {
-    box.innerHTML = `<p class="row">${icon('notifications_active')}<strong>${t('track.pushOn')}</strong></p>`;
+    box.innerHTML = `<p class="row">${icon('notifications_active')}<strong>${t('track.pushOn')}</strong></p>
+      ${isAndroid() ? `<p class="muted text-sm">${escapeHtml(t('track.batteryTip'))}</p>` : ''}`;
+    return;
+  }
+  if (!IS_DEMO && !(isIOS() && !isStandalone()) && 'Notification' in window && Notification.permission === 'denied') {
+    box.innerHTML = `<p class="row">${icon('notifications_off')}<strong>${t('track.pushTitle')}</strong></p><p class="text-sm">${escapeHtml(t('track.pushDeniedBody'))}</p>`;
     return;
   }
   if (IS_DEMO) {
@@ -182,6 +306,9 @@ function renderOrder() {
   } else alertBox.innerHTML = '';
 
   renderNotify();
+  renderGuide();
+  renderReady();
+  updateWakeLock();
 
   // 訊息
   const messages = order.messages || [];
@@ -224,9 +351,8 @@ function notifyChanges() {
   if (firstSnapshot || !prevOrder) return;
   if (prevOrder.status !== order.status) {
     if (order.status === 'ready') {
-      beep(3);
-      vibrate([300, 150, 300, 150, 300]);
-      toast(t('track.readyToast'), 'success', 6000);
+      // 重複響到按「我知道了」為止，最長 60 秒
+      if (!isAcked()) startAlarm(60000);
       showLocalNotification(t('track.notiTitle'), t('track.notiBody', { no: order.no }));
     } else if (order.status === 'accepted') {
       beep(1);
@@ -315,6 +441,11 @@ async function init() {
     if (order) renderOrder();
   });
 
+  api.watchSettings((s) => {
+    settings = s;
+    if (order) renderGuide();
+  });
+
   api.watchOrder(orderId, (o) => {
     if (!o) {
       show('find');
@@ -337,6 +468,7 @@ async function init() {
     pageReady();
     notifyChanges();
     firstSnapshot = false;
+    maybePromptPush();
   });
 
   // 每 30 秒更新預估時間

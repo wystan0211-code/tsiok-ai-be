@@ -4,6 +4,7 @@ import { CONFIG } from '../config.js';
 import { ApiError } from '../core/errors.js';
 import { DEFAULT_SETTINGS } from '../core/defaults.js';
 import { formatNo, randomToken, startOfDay, pad2 } from '../core/format.js';
+import { itemImageRefs, imageDocId } from '../core/images.js';
 import {
   countItems, isFinal, priceLines, stockProblems, stockUpdates,
 } from '../core/order-logic.js';
@@ -15,7 +16,7 @@ const {
 } = await import(`${SDK}/firebase-auth.js`);
 const {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc,
+  doc, collection, getDoc, getDocFromCache, getDocs, setDoc, updateDoc, deleteDoc, addDoc, writeBatch,
   onSnapshot, query, where, orderBy, limit, runTransaction,
   serverTimestamp, arrayUnion, increment, Timestamp,
 } = await import(`${SDK}/firebase-firestore.js`);
@@ -140,8 +141,35 @@ async function loadProfile(user) {
   return { uid: user.uid, username: u.username || username, displayName: u.displayName || username, role: u.role };
 }
 
-// 圖片快取：同一版本的圖片只下載一次
+// 圖片快取：照片內容不會改變(換照片會產生新 ID)，所以先讀裝置上的快取，沒有才向伺服器讀取，
+// 同一張照片只會消耗一次讀取額度與流量
 const imageCache = new Map();
+const siteImageCache = new Map();
+
+async function readImage(coll, id, immutable = true) {
+  const cache = immutable ? imageCache : siteImageCache;
+  const key = `${coll}/${id}`;
+  if (cache.has(key)) return cache.get(key);
+  const task = (async () => {
+    let snap = null;
+    if (immutable) {
+      try {
+        snap = await getDocFromCache(ref(coll, id));
+      } catch {
+        snap = null;
+      }
+    }
+    if (!snap || !snap.exists()) snap = await getDoc(ref(coll, id));
+    return snap.exists() ? snap.data().data : null;
+  })();
+  cache.set(key, task);
+  try {
+    return await task;
+  } catch (err) {
+    cache.delete(key);
+    throw err;
+  }
+}
 
 export const api = {
   isDemo: false,
@@ -190,18 +218,39 @@ export const api = {
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
   },
 
+  // 各品項的封面小圖：{ 品項ID: dataURL }
   getItemImages: (items) => guard(async () => {
     const out = {};
-    await Promise.all(items.filter((i) => i.hasImage).map(async (it) => {
-      const key = `${it.id}:${it.imageVersion || 0}`;
-      if (!imageCache.has(key)) {
-        const snap = await getDoc(ref('itemImages', it.id));
-        imageCache.set(key, snap.exists() ? snap.data().data : null);
-      }
-      if (imageCache.get(key)) out[it.id] = imageCache.get(key);
+    await Promise.all(items.map(async (it) => {
+      const cover = itemImageRefs(it)[0];
+      if (!cover) return;
+      const data = await readImage('itemImages', imageDocId(cover, 's'));
+      if (data) out[it.id] = data;
     }));
     return out;
   }),
+
+  // 指定照片的圖：refs 為 itemImageRefs() 的結果，size 為 's' 或 'l'；回傳 { 照片ID: dataURL }
+  getImages: (refs, size = 'l') => guard(async () => {
+    const out = {};
+    await Promise.all(refs.map(async (r) => {
+      const data = await readImage('itemImages', imageDocId(r, size));
+      if (data) out[r.id] = data;
+    }));
+    return out;
+  }),
+
+  watchCategories(cb) {
+    return watchQuery(collection(db, 'categories'), cb, (list) => list.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
+  },
+
+  // 橫幅輪播：依順序回傳 [{ id, data }]
+  watchBanners(cb) {
+    return watchQuery(collection(db, 'banners'), cb, (list) => list.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
+  },
+
+  // 網站圖片(目前只有攤位位置圖 guide)
+  getSiteImage: (id) => guard(async () => readImage('siteImages', id, false)),
 
   submitPreorder: ({ lines, surname, title, phone, consentText, lang = 'zh-Hant' }) => guard(async () => {
     const uid = await customerUid();
@@ -291,9 +340,11 @@ export const api = {
   enablePush: (orderId) => guard(async () => {
     if (!CONFIG.vapidKey) throw new ApiError('push-unsupported', '尚未設定推播憑證(vapidKey)。');
     if (!('Notification' in window) || !('serviceWorker' in navigator)) throw new ApiError('push-unsupported');
+    // 系統權限視窗必須在使用者點擊的當下跳出(iPhone 特別嚴格)，所以在任何等待之前先請求
+    const permissionTask = Notification.requestPermission();
     const { getMessaging, getToken, isSupported } = await import(`${SDK}/firebase-messaging.js`);
     if (!(await isSupported())) throw new ApiError('push-unsupported');
-    const permission = await Notification.requestPermission();
+    const permission = await permissionTask;
     if (permission !== 'granted') throw new ApiError('push-denied');
     const swUrl = `sw.js?v=${CONFIG.firebaseSdkVersion}&config=${encodeURIComponent(JSON.stringify(CONFIG.firebase))}`;
     const registration = await navigator.serviceWorker.register(swUrl, { scope: './' });
@@ -485,14 +536,66 @@ export const api = {
   }),
 
   deleteItem: (id) => guard(async () => {
-    await deleteDoc(ref('itemImages', id));
-    await deleteDoc(ref('items', id));
+    const snap = await getDoc(ref('items', id));
+    const refs = snap.exists() ? itemImageRefs({ id, ...snap.data() }) : [];
+    const batch = writeBatch(db);
+    for (const r of refs) {
+      batch.delete(ref('itemImages', imageDocId(r, 's')));
+      if (!r.legacy) batch.delete(ref('itemImages', imageDocId(r, 'l')));
+    }
+    batch.delete(ref('items', id));
+    await batch.commit();
   }),
 
-  setItemImage: (id, dataUrl) => guard(async () => {
-    if (dataUrl) await setDoc(ref('itemImages', id), { data: dataUrl });
-    else await deleteDoc(ref('itemImages', id));
-    await updateDoc(ref('items', id), { hasImage: !!dataUrl, imageVersion: Date.now(), updatedAt: serverTimestamp() });
+  // 更新品項照片：add 為新照片 [{ id, small, large }]，order 為最後的照片順序，remove 為要刪除的照片參照
+  saveItemImages: (itemId, { add = [], order = [], remove = [] }) => guard(async () => {
+    // 每張大圖約 150KB，分批寫入避免單次請求過大
+    for (const img of add) {
+      await setDoc(ref('itemImages', `${img.id}_s`), { data: img.small, itemId });
+      await setDoc(ref('itemImages', `${img.id}_l`), { data: img.large, itemId });
+    }
+    await updateDoc(ref('items', itemId), {
+      images: order, hasImage: order.length > 0, imageVersion: Date.now(), updatedAt: serverTimestamp(),
+    });
+    for (const r of remove) {
+      await deleteDoc(ref('itemImages', imageDocId(r, 's')));
+      if (!r.legacy) await deleteDoc(ref('itemImages', imageDocId(r, 'l')));
+    }
+  }),
+
+  // ===== 分類 =====
+  saveCategory: (cat) => guard(async () => {
+    const { id, ...data } = cat;
+    if (id) {
+      await updateDoc(ref('categories', id), { ...data, updatedAt: serverTimestamp() });
+      return id;
+    }
+    return (await addDoc(collection(db, 'categories'), { ...data, updatedAt: serverTimestamp() })).id;
+  }),
+
+  deleteCategory: (id) => guard(async () => {
+    await deleteDoc(ref('categories', id));
+  }),
+
+  // ===== 橫幅輪播 =====
+  addBanner: (dataUrl, sortOrder) => guard(async () => {
+    await addDoc(collection(db, 'banners'), { data: dataUrl, sortOrder, updatedAt: serverTimestamp() });
+  }),
+
+  deleteBanner: (id) => guard(async () => {
+    await deleteDoc(ref('banners', id));
+  }),
+
+  reorderBanners: (ids) => guard(async () => {
+    const batch = writeBatch(db);
+    ids.forEach((id, i) => batch.update(ref('banners', id), { sortOrder: i + 1 }));
+    await batch.commit();
+  }),
+
+  setSiteImage: (id, dataUrl) => guard(async () => {
+    if (dataUrl) await setDoc(ref('siteImages', id), { data: dataUrl, updatedAt: serverTimestamp() });
+    else await deleteDoc(ref('siteImages', id));
+    siteImageCache.delete(id);
   }),
 
   saveSettings: (patch) => guard(async () => {

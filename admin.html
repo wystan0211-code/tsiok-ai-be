@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,chevron_right,delete,done_all,download,edit,error,fullscreen,group,image,inbox,info,language,link_off,login,logout,notifications,notifications_active,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,view_kanban,volume_up,warning&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,add_photo_alternate,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,chevron_left,chevron_right,close,delete,done_all,download,edit,error,expand_more,fullscreen,group,image,inbox,info,language,link_off,login,logout,near_me,notifications,notifications_active,notifications_off,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,upload,view_kanban,volume_up,warning,zoom_in,zoom_out&display=block">
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/components.css">
@@ -58,6 +58,16 @@
 
     <!-- 品項 -->
     <section id="panel-items" role="tabpanel" class="stack">
+      <div class="card stack">
+        <div class="row row--between">
+          <h2 class="section-title" style="margin:0">菜單分類</h2>
+          <button id="cat-add" class="btn btn--sm" type="button">
+            <span class="material-symbols-rounded icon icon--sm" aria-hidden="true">add</span>新增分類
+          </button>
+        </div>
+        <p class="muted text-sm">分類會顯示在點餐頁的分類列，順序可調整；沒有品項的分類會自動隱藏，沒有指定分類的品項排在最後。</p>
+        <div id="cat-list" class="cat-list"></div>
+      </div>
       <div class="row row--between">
         <p class="muted text-sm">價格與庫存變更會立即顯示在點餐頁。</p>
         <button id="item-add" class="btn btn--primary" type="button">
@@ -66,7 +76,7 @@
       </div>
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>圖片</th><th>品項</th><th class="num">價格</th><th class="num">已售 / 上限</th><th>狀態</th><th>排序</th><th>操作</th></tr></thead>
+          <thead><tr><th>封面</th><th>品項</th><th class="num">價格</th><th class="num">已售 / 上限</th><th>狀態</th><th>排序</th><th>操作</th></tr></thead>
           <tbody id="item-rows"></tbody>
         </table>
       </div>
@@ -74,11 +84,49 @@
 
     <!-- 營業設定 -->
     <section id="panel-settings" role="tabpanel" hidden>
+      <div class="card stack" style="max-width:720px;margin-bottom:var(--space-4)">
+        <div class="row row--between">
+          <h2 class="section-title" style="margin:0">橫幅輪播</h2>
+          <button id="banner-add" class="btn btn--sm" type="button">
+            <span class="material-symbols-rounded icon icon--sm" aria-hidden="true">add_photo_alternate</span>新增橫幅
+          </button>
+        </div>
+        <p class="muted text-sm">顯示在點餐頁上方，9:5(1080×600)，最多 5 張，依順序輪播。上傳後可調整顯示範圍，變更立即生效。</p>
+        <div id="banner-list" class="banner-admin"></div>
+        <input id="banner-file" type="file" accept="image/*" hidden>
+      </div>
+
       <form id="settings-form" class="card stack" style="max-width:720px">
-        <h2 class="section-title">公告橫幅</h2>
-        <label class="switch"><input type="checkbox" name="bannerActive"><span>顯示公告</span></label>
-        <label class="field"><span class="field__label">公告內容</span>
+        <h2 class="section-title">跑馬燈</h2>
+        <label class="switch"><input type="checkbox" name="bannerActive"><span>顯示跑馬燈(點餐頁標題列下方)</span></label>
+        <label class="field"><span class="field__label">跑馬燈內容</span>
           <input class="input" name="bannerText" maxlength="80" placeholder="例如：雞蛋糕 14:00 前暫停供應"></label>
+
+        <h2 class="section-title">引導我去攤位</h2>
+        <label class="switch"><input type="checkbox" name="guideActive"><span>在訂單進度頁顯示「引導我去攤位」</span></label>
+        <fieldset class="field" style="border:none;padding:0;margin:0">
+          <legend class="field__label">顯示內容</legend>
+          <div class="radio-group">
+            <label class="radio-chip"><input type="radio" name="guideType" value=""><span>尚未設定</span></label>
+            <label class="radio-chip"><input type="radio" name="guideType" value="map"><span>Google 地圖</span></label>
+            <label class="radio-chip"><input type="radio" name="guideType" value="image"><span>位置圖片</span></label>
+          </div>
+          <span class="field__hint">尚未設定時，顧客展開後會看到「攤位位置即將公布」</span>
+        </fieldset>
+        <label class="field" data-guide="map"><span class="field__label">Google 地圖嵌入碼或網址</span>
+          <textarea class="textarea" name="guideMapUrl" rows="3" placeholder="Google 地圖 > 分享 > 嵌入地圖 > 複製 HTML，整段貼上即可"></textarea>
+          <span class="field__hint">只接受 https://www.google.com/maps/embed 開頭的嵌入網址</span></label>
+        <div class="field" data-guide="image">
+          <span class="field__label">位置圖片(變更立即生效)</span>
+          <div class="row">
+            <img id="guide-preview" class="guide-preview" alt="" hidden>
+            <button id="guide-upload" class="btn btn--sm" type="button">
+              <span class="material-symbols-rounded icon icon--sm" aria-hidden="true">upload</span>上傳圖片</button>
+            <button id="guide-remove" class="btn btn--sm btn--danger" type="button" hidden>
+              <span class="material-symbols-rounded icon icon--sm" aria-hidden="true">delete</span>移除</button>
+          </div>
+          <input id="guide-file" type="file" accept="image/*" hidden>
+        </div>
 
         <h2 class="section-title">預點</h2>
         <label class="switch"><input type="checkbox" name="acceptingPreorders"><span>接受預點</span></label>
@@ -104,14 +152,14 @@
           <summary>英文與日文翻譯(顧客選擇英文或日文時顯示；儲存時自動翻譯，可手動修改)</summary>
           <fieldset class="tr-box__lang">
             <legend class="field__label">英文</legend>
-            <label class="field"><span class="field__hint">公告內容</span><input class="input" name="tr_en_bannerText" maxlength="200"></label>
+            <label class="field"><span class="field__hint">跑馬燈內容</span><input class="input" name="tr_en_bannerText" maxlength="200"></label>
             <label class="field"><span class="field__hint">個資同意文字</span><textarea class="textarea" name="tr_en_consentText" maxlength="600"></textarea></label>
             <label class="field"><span class="field__hint">常用訊息(一行一則，順序與中文相同)</span><textarea class="textarea" name="tr_en_messageTemplates"></textarea></label>
             <label class="field"><span class="field__hint">簡訊範本(必須保留 {no}，可用 {surname})</span><textarea class="textarea" name="tr_en_smsTemplate" maxlength="400"></textarea></label>
           </fieldset>
           <fieldset class="tr-box__lang">
             <legend class="field__label">日文</legend>
-            <label class="field"><span class="field__hint">公告內容</span><input class="input" name="tr_ja_bannerText" maxlength="200"></label>
+            <label class="field"><span class="field__hint">跑馬燈內容</span><input class="input" name="tr_ja_bannerText" maxlength="200"></label>
             <label class="field"><span class="field__hint">個資同意文字</span><textarea class="textarea" name="tr_ja_consentText" maxlength="600"></textarea></label>
             <label class="field"><span class="field__hint">常用訊息(一行一則，順序與中文相同)</span><textarea class="textarea" name="tr_ja_messageTemplates"></textarea></label>
             <label class="field"><span class="field__hint">簡訊範本(必須保留 {no}，可用 {surname})</span><textarea class="textarea" name="tr_ja_smsTemplate" maxlength="400"></textarea></label>

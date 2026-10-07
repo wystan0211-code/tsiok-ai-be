@@ -1,10 +1,22 @@
 // 提示音與震動：瀏覽器規定要先有使用者互動才能播放聲音，所以第一次點擊時解鎖
+// 聲音經過壓縮器，音量接近最大也不會破音；使用較能穿透人聲的高頻音(約 1.6–2.4 kHz)
+// 注意：網頁聲音跟隨手機的「媒體音量」，iPhone 靜音模式時可能沒有聲音，這是系統限制
 let ctx = null;
+let out = null;
 
 export function unlockAudio() {
   try {
     ctx ??= new (window.AudioContext || window.webkitAudioContext)();
     if (ctx.state === 'suspended') ctx.resume();
+    if (!out) {
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -12;
+      comp.ratio.value = 6;
+      const master = ctx.createGain();
+      master.gain.value = 1;
+      comp.connect(master).connect(ctx.destination);
+      out = comp;
+    }
   } catch {
     ctx = null;
   }
@@ -16,26 +28,71 @@ export function isAudioReady() {
   return !!ctx && ctx.state === 'running';
 }
 
-// 短促提示音，times 次
-export function beep(times = 2, frequency = 880) {
-  if (!ctx) return;
-  const start = ctx.currentTime;
-  for (let i = 0; i < times; i += 1) {
+// 單一音：方波較響亮，混一點正弦波讓聲音不那麼刺耳
+function tone(at, frequency, duration, volume = 0.6) {
+  for (const [type, level] of [['square', 0.35], ['sine', 0.65]]) {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.type = 'sine';
+    osc.type = type;
     osc.frequency.value = frequency;
-    const t = start + i * 0.28;
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.3, t + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start(t);
-    osc.stop(t + 0.22);
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.exponentialRampToValueAtTime(volume * level, at + 0.015);
+    gain.gain.setValueAtTime(volume * level, at + duration - 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+    osc.connect(gain).connect(out);
+    osc.start(at);
+    osc.stop(at + duration + 0.02);
   }
 }
 
-// iPhone 的 Safari 不支援震動，會自動略過
+// 提示音，times 次
+export function beep(times = 2, frequency = 1600) {
+  if (!ctx || !out) return;
+  const start = ctx.currentTime + 0.02;
+  for (let i = 0; i < times; i += 1) tone(start + i * 0.42, frequency, 0.3);
+}
+
+// ===== 取餐鬧鈴：重複響到呼叫 stopAlarm()，最長 maxMs =====
+let alarmTimer = null;
+let alarmEnd = 0;
+
+function alarmCycle() {
+  if (Date.now() > alarmEnd) {
+    stopAlarm();
+    return;
+  }
+  if (ctx && out) {
+    const t = ctx.currentTime + 0.02;
+    // 高低交替的三連音
+    tone(t, 1800, 0.22, 0.8);
+    tone(t + 0.3, 2400, 0.22, 0.8);
+    tone(t + 0.6, 1800, 0.22, 0.8);
+  }
+  vibrate([250, 100, 250, 100, 250]);
+}
+
+export function startAlarm(maxMs = 60000) {
+  stopAlarm();
+  alarmEnd = Date.now() + maxMs;
+  alarmCycle();
+  alarmTimer = setInterval(alarmCycle, 1600);
+}
+
+export function stopAlarm() {
+  clearInterval(alarmTimer);
+  alarmTimer = null;
+  try {
+    navigator.vibrate?.(0);
+  } catch {
+    // 忽略
+  }
+}
+
+export function isAlarmOn() {
+  return alarmTimer !== null;
+}
+
+// iPhone 不支援網頁震動，會自動略過
 export function vibrate(pattern = [200, 100, 200]) {
   try {
     navigator.vibrate?.(pattern);

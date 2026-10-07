@@ -11,6 +11,9 @@ import {
 } from '../core/format.js';
 import { displayLines, isPaid, lineLabel, summarizeLines } from '../core/order-logic.js';
 import { compressImage } from '../core/image.js';
+import { cropItemImage, cropBannerImage } from '../core/cropper.js';
+import { itemImageRefs, MAX_ITEM_IMAGES, MAX_BANNERS } from '../core/images.js';
+import { randomToken } from '../core/format.js';
 import { qrSvg } from '../core/qr.js';
 
 showDemoBanner(IS_DEMO);
@@ -18,7 +21,10 @@ showDemoBanner(IS_DEMO);
 let profile = null;
 let isAdmin = false;
 let items = [];
+let categories = [];
+let banners = [];
 let images = {};
+const MAX_FEATURED = 5;
 let settings = null;
 let financeOrders = [];
 
@@ -31,8 +37,109 @@ function selectTab(name) {
 }
 $$('.tab').forEach((tab) => tab.addEventListener('click', () => selectTab(tab.dataset.tab)));
 
+// ===== 菜單分類 =====
+const catName = (id) => categories.find((c) => c.id === id)?.name || '';
+
+function renderCategories() {
+  const box = $('#cat-list');
+  if (!categories.length) {
+    box.innerHTML = '<p class="muted text-sm">尚未建立分類</p>';
+    return;
+  }
+  box.innerHTML = categories.map((c, i) => {
+    const count = items.filter((it) => it.categoryId === c.id).length;
+    return `<div class="cat-row" data-cat="${c.id}">
+      <span class="cat-row__name">${escapeHtml(c.name)} <span class="muted text-sm">${count} 項</span></span>
+      <button class="btn btn--ghost btn--icon" data-cat-act="up" ${i === 0 ? 'disabled' : ''} aria-label="上移">${icon('arrow_upward')}</button>
+      <button class="btn btn--ghost btn--icon" data-cat-act="down" ${i === categories.length - 1 ? 'disabled' : ''} aria-label="下移">${icon('arrow_downward')}</button>
+      <button class="btn btn--ghost btn--icon" data-cat-act="edit" aria-label="編輯">${icon('edit')}</button>
+      <button class="btn btn--ghost btn--icon" data-cat-act="delete" aria-label="刪除">${icon('delete')}</button>
+    </div>`;
+  }).join('');
+}
+
+async function editCategory(cat) {
+  const { value, data } = await openDialog({
+    title: cat ? `編輯分類 ${cat.name}` : '新增分類',
+    body: `
+      <label class="field"><span class="field__label">分類名稱</span>
+        <input class="input" name="name" maxlength="16" required value="${escapeHtml(cat?.name || '')}"></label>
+      <details class="tr-box">
+        <summary>英文與日文翻譯(儲存時自動翻譯，可手動修改)</summary>
+        ${TR_LANGS.map(([lang, label]) => `<label class="field"><span class="field__hint">${label}</span>
+          <input class="input" name="tr_${lang}_name" maxlength="40" value="${escapeHtml(cat?.i18n?.[lang]?.name || '')}"></label>`).join('')}
+      </details>`,
+    actions: [{ label: '儲存', value: 'save' }],
+  });
+  if (value !== 'save') return;
+  const name = str(data.get('name'));
+  if (!name) {
+    toast('請填寫分類名稱', 'danger');
+    return;
+  }
+  const changed = name !== (cat?.name || '');
+  const i18n = {};
+  const todo = [];
+  for (const [lang] of TR_LANGS) {
+    const typed = str(data.get(`tr_${lang}_name`));
+    i18n[lang] = { name: typed };
+    if (needAuto(typed, cat?.i18n?.[lang]?.name, changed)) todo.push(lang);
+  }
+  let notice = { auto: 0, failed: false };
+  if (todo.length) {
+    const res = await api.translate([name], todo);
+    if (res) {
+      todo.forEach((lang) => { i18n[lang].name = res[lang]?.[0] || ''; });
+      notice = { auto: todo.length, failed: false };
+    } else notice = { auto: 0, failed: true };
+  }
+  try {
+    await api.saveCategory({
+      ...(cat ? { id: cat.id } : { sortOrder: Math.max(0, ...categories.map((c) => c.sortOrder || 0)) + 1 }),
+      name, i18n,
+    });
+    toast(translateNotice(notice), notice.failed ? 'info' : 'success');
+  } catch (err) {
+    toast(errorText(err), 'danger');
+  }
+}
+
+$('#cat-add').addEventListener('click', () => editCategory(null));
+
+$('#cat-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-cat-act]');
+  if (!btn) return;
+  const id = btn.closest('[data-cat]').dataset.cat;
+  const index = categories.findIndex((c) => c.id === id);
+  const cat = categories[index];
+  withBusy(btn, async () => {
+    try {
+      const act = btn.dataset.catAct;
+      if (act === 'edit') await editCategory(cat);
+      if (act === 'delete') {
+        if (await confirmDialog('刪除分類', `確定要刪除分類「${cat.name}」嗎？裡面的品項不會被刪除，會改為未分類。`, { confirmLabel: '刪除', danger: true })) {
+          await api.deleteCategory(id);
+          for (const it of items.filter((x) => x.categoryId === id)) await api.saveItem({ id: it.id, categoryId: null });
+          toast('已刪除分類');
+        }
+      }
+      if (act === 'up' || act === 'down') {
+        const target = act === 'up' ? index - 1 : index + 1;
+        const order = categories.slice();
+        [order[index], order[target]] = [order[target], order[index]];
+        for (const [i, c] of order.entries()) {
+          if (c.sortOrder !== i + 1) await api.saveCategory({ id: c.id, sortOrder: i + 1 });
+        }
+      }
+    } catch (err) {
+      toast(errorText(err), 'danger');
+    }
+  });
+});
+
 // ===== 品項 =====
 function renderItems() {
+  renderCategories();
   const rows = $('#item-rows');
   if (!items.length) {
     rows.innerHTML = '<tr><td colspan="7" class="empty">尚未建立品項</td></tr>';
@@ -42,13 +149,16 @@ function renderItems() {
     const status = [
       it.active ? '<span class="badge badge--success">上架</span>' : '<span class="badge">下架</span>',
       it.soldOut ? '<span class="badge badge--danger">售完</span>' : '',
+      it.featured ? '<span class="badge badge--primary">推薦</span>' : '',
     ].join(' ');
+    const count = itemImageRefs(it).length;
     const thumb = images[it.id]
-      ? `<img src="${images[it.id]}" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:var(--radius)">`
+      ? `<img src="${images[it.id]}" alt="" class="admin-thumb">`
       : `<span class="muted">${icon('image')}</span>`;
+    const meta = [catName(it.categoryId) || '未分類', ...(it.tags || []).map((t) => `#${t}`)].join('・');
     return `<tr data-item="${it.id}">
-      <td>${thumb}</td>
-      <td><strong>${escapeHtml(it.name)}</strong>${it.options?.length ? `<div class="muted">${escapeHtml(it.options.join('、'))}</div>` : ''}</td>
+      <td>${thumb}${count > 1 ? `<div class="muted text-xs">${count} 張</div>` : ''}</td>
+      <td><strong>${escapeHtml(it.name)}</strong><div class="muted text-sm">${escapeHtml(meta)}</div>${it.options?.length ? `<div class="muted text-sm">選項：${escapeHtml(it.options.join('、'))}</div>` : ''}</td>
       <td class="num">${money(it.price)}</td>
       <td class="num">${it.soldCount || 0} / ${it.stockLimit ?? '不限'}</td>
       <td>${status}</td>
@@ -88,9 +198,11 @@ function itemTrFields(item) {
           <label class="field"><span class="field__hint">名稱</span>
             <input class="input" name="tr_${lang}_name" maxlength="60" value="${escapeHtml(tr.name || '')}"></label>
           <label class="field"><span class="field__hint">說明</span>
-            <input class="input" name="tr_${lang}_description" maxlength="160" value="${escapeHtml(tr.description || '')}"></label>
+            <textarea class="textarea" name="tr_${lang}_description" maxlength="600" rows="2">${escapeHtml(tr.description || '')}</textarea></label>
           <label class="field"><span class="field__hint">選項(用頓號、分隔，順序與中文相同)</span>
             <input class="input" name="tr_${lang}_options" value="${escapeHtml((tr.options || []).join('、'))}"></label>
+          <label class="field"><span class="field__hint">標籤(用頓號、分隔，順序與中文相同)</span>
+            <input class="input" name="tr_${lang}_tags" value="${escapeHtml((tr.tags || []).join('、'))}"></label>
         </fieldset>`;
       }).join('')}
     </details>`;
@@ -103,7 +215,10 @@ async function buildItemI18n(payload, oldItem, data) {
     name: payload.name !== (old.name || ''),
     description: payload.description !== (old.description || ''),
     options: payload.options.join('、') !== (old.options || []).join('、'),
+    tags: payload.tags.join('、') !== (old.tags || []).join('、'),
   };
+  const listNeedsAuto = (typed, src, oldTr, srcChanged) => src.length && (typed.length !== src.length
+    || (srcChanged && typed.join('、') === (oldTr || []).join('、')));
   const result = {};
   const todo = [];
   for (const [lang] of TR_LANGS) {
@@ -112,23 +227,27 @@ async function buildItemI18n(payload, oldItem, data) {
       name: str(data.get(`tr_${lang}_name`)),
       description: payload.description ? str(data.get(`tr_${lang}_description`)) : '',
       options: payload.options.length ? splitList(data.get(`tr_${lang}_options`)) : [],
+      tags: payload.tags.length ? splitList(data.get(`tr_${lang}_tags`)) : [],
     };
     result[lang] = typed;
     if (needAuto(typed.name, oldTr.name, changed.name)) todo.push([lang, 'name']);
     if (payload.description && needAuto(typed.description, oldTr.description, changed.description)) todo.push([lang, 'description']);
-    if (payload.options.length && (typed.options.length !== payload.options.length
-      || (changed.options && typed.options.join('、') === (oldTr.options || []).join('、')))) todo.push([lang, 'options']);
+    if (listNeedsAuto(typed.options, payload.options, oldTr.options, changed.options)) todo.push([lang, 'options']);
+    if (listNeedsAuto(typed.tags, payload.tags, oldTr.tags, changed.tags)) todo.push([lang, 'tags']);
   }
   if (!todo.length) return { i18n: result, auto: 0, failed: false };
   const langs = [...new Set(todo.map(([l]) => l))];
-  const res = await api.translate([payload.name, payload.description, ...payload.options], langs);
+  const optStart = 2;
+  const tagStart = 2 + payload.options.length;
+  const res = await api.translate([payload.name, payload.description, ...payload.options, ...payload.tags], langs);
   if (!res) return { i18n: result, auto: 0, failed: true };
   for (const [lang, field] of todo) {
     const list = res[lang];
     if (!list) continue;
     if (field === 'name') result[lang].name = list[0] || '';
     if (field === 'description') result[lang].description = list[1] || '';
-    if (field === 'options') result[lang].options = list.slice(2);
+    if (field === 'options') result[lang].options = list.slice(optStart, tagStart);
+    if (field === 'tags') result[lang].tags = list.slice(tagStart);
   }
   return { i18n: result, auto: todo.length, failed: false };
 }
@@ -139,15 +258,113 @@ function translateNotice({ auto, failed }) {
   return '已儲存';
 }
 
+// ===== 品項照片管理(最多 10 張，第一張為封面) =====
+// list 中每張：{ id, legacy, src(小圖預覽), isNew, small, large }
+function imageManager(dlg, list) {
+  const box = dlg.querySelector('[data-img-mgr]');
+  const input = dlg.querySelector('[data-img-file]');
+  let dragIndex = -1;
+
+  const render = () => {
+    box.innerHTML = list.map((img, i) => `
+      <div class="img-tile" draggable="true" data-index="${i}">
+        <img src="${img.src}" alt="">
+        ${i === 0 ? '<span class="img-tile__cover">封面</span>' : ''}
+        <div class="img-tile__bar">
+          <button type="button" class="img-tile__btn" data-img-act="left" ${i === 0 ? 'disabled' : ''} aria-label="往前">${icon('chevron_left', 'icon--sm')}</button>
+          <button type="button" class="img-tile__btn" data-img-act="del" aria-label="刪除">${icon('delete', 'icon--sm')}</button>
+          <button type="button" class="img-tile__btn" data-img-act="right" ${i === list.length - 1 ? 'disabled' : ''} aria-label="往後">${icon('chevron_right', 'icon--sm')}</button>
+        </div>
+      </div>`).join('') + (list.length < MAX_ITEM_IMAGES ? `
+      <button type="button" class="img-tile img-tile--add" data-img-act="add">
+        ${icon('add_photo_alternate')}<span class="text-sm">新增照片</span><span class="muted text-xs">${list.length} / ${MAX_ITEM_IMAGES}</span>
+      </button>` : '');
+  };
+
+  const move = (from, to) => {
+    if (to < 0 || to >= list.length || from === to) return;
+    const [img] = list.splice(from, 1);
+    list.splice(to, 0, img);
+    render();
+  };
+
+  box.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-img-act]');
+    if (!btn) return;
+    const i = Number(btn.closest('[data-index]')?.dataset.index);
+    const act = btn.dataset.imgAct;
+    if (act === 'add') input.click();
+    if (act === 'left') move(i, i - 1);
+    if (act === 'right') move(i, i + 1);
+    if (act === 'del') {
+      list.splice(i, 1);
+      render();
+    }
+  });
+
+  // 電腦版可直接拖曳排序
+  box.addEventListener('dragstart', (e) => {
+    dragIndex = Number(e.target.closest('[data-index]')?.dataset.index ?? -1);
+  });
+  box.addEventListener('dragover', (e) => e.preventDefault());
+  box.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const target = Number(e.target.closest('[data-index]')?.dataset.index ?? -1);
+    if (dragIndex >= 0 && target >= 0) move(dragIndex, target);
+    dragIndex = -1;
+  });
+
+  input.addEventListener('change', async () => {
+    const files = [...input.files];
+    input.value = '';
+    const room = MAX_ITEM_IMAGES - list.length;
+    if (files.length > room) toast(`每個品項最多 ${MAX_ITEM_IMAGES} 張，只會加入前 ${room} 張`, 'info', 5000);
+    for (const file of files.slice(0, room)) {
+      try {
+        const out = await cropItemImage(file);
+        if (!out) continue;
+        list.push({ id: randomToken(8), isNew: true, src: out[0], small: out[0], large: out[1] });
+        render();
+      } catch (err) {
+        toast(err.message || '圖片無法使用', 'danger');
+      }
+    }
+  });
+
+  render();
+}
+
 async function editItem(item) {
   const it = item || {
     name: '', price: 0, description: '', prepMinutes: 5, options: [], stockLimit: null,
-    soldCount: 0, active: true, soldOut: false,
+    soldCount: 0, active: true, soldOut: false, categoryId: null, featured: false, tags: [],
   };
+  // 現有照片：先載入小圖當預覽
+  const refs = item ? itemImageRefs(item) : [];
+  let thumbs = {};
+  if (refs.length) {
+    try {
+      thumbs = await api.getImages(refs, 's');
+    } catch (err) {
+      console.warn(err);
+    }
+  }
+  // 舊格式的照片(只有一份)直接轉成新格式：大小圖都用原本那一份，儲存時刪除舊資料
+  const imgList = refs.map((r) => (r.legacy
+    ? { id: randomToken(8), isNew: true, src: thumbs[r.id], small: thumbs[r.id], large: thumbs[r.id] }
+    : { ...r, src: thumbs[r.id] || '' })).filter((img) => img.src || !img.isNew);
+  const featuredOthers = items.filter((x) => x.featured && x.id !== item?.id).length;
+  const canFeature = it.featured || featuredOthers < MAX_FEATURED;
+
   const { value, data } = await openDialog({
     title: item ? `編輯 ${item.name}` : '新增品項',
     size: 'wide',
     body: `
+      <div class="field">
+        <span class="field__label">照片(最多 ${MAX_ITEM_IMAGES} 張，第一張為菜單封面；可用箭頭或拖曳調整順序)</span>
+        <div class="img-grid" data-img-mgr></div>
+        <input type="file" accept="image/*" multiple hidden data-img-file>
+      </div>
       <label class="field"><span class="field__label">名稱</span>
         <input class="input" name="name" maxlength="20" required value="${escapeHtml(it.name)}"></label>
       <div class="row" style="align-items:flex-start">
@@ -156,11 +373,19 @@ async function editItem(item) {
         <label class="field" style="flex:1"><span class="field__label">製作時間(分鐘)</span>
           <input class="input" name="prepMinutes" type="number" min="0" max="120" step="1" value="${it.prepMinutes || 0}"></label>
       </div>
+      <label class="field"><span class="field__label">分類</span>
+        <select class="select" name="categoryId">
+          <option value="">未分類</option>
+          ${categories.map((c) => `<option value="${c.id}" ${c.id === it.categoryId ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
+        </select></label>
       <label class="field"><span class="field__label">說明</span>
-        <input class="input" name="description" maxlength="80" value="${escapeHtml(it.description || '')}"></label>
+        <textarea class="textarea" name="description" maxlength="300" rows="3">${escapeHtml(it.description || '')}</textarea>
+        <span class="field__hint">菜單只顯示第一行，完整內容在品項詳細頁顯示</span></label>
       <label class="field"><span class="field__label">選項(用頓號、分隔，例如：糖粉、巧克力)</span>
         <input class="input" name="options" value="${escapeHtml((it.options || []).join('、'))}">
         <span class="field__hint">留空代表沒有選項；有選項時顧客必須選一個</span></label>
+      <label class="field"><span class="field__label">標籤(用頓號、分隔，例如：人氣、辣)</span>
+        <input class="input" name="tags" maxlength="60" value="${escapeHtml((it.tags || []).join('、'))}"></label>
       <div class="row" style="align-items:flex-start">
         <label class="field" style="flex:1"><span class="field__label">數量上限(留空為不限)</span>
           <input class="input" name="stockLimit" type="number" min="0" step="1" value="${it.stockLimit ?? ''}"></label>
@@ -169,11 +394,10 @@ async function editItem(item) {
       </div>
       <label class="switch"><input type="checkbox" name="active" ${it.active ? 'checked' : ''}><span>上架</span></label>
       <label class="switch"><input type="checkbox" name="soldOut" ${it.soldOut ? 'checked' : ''}><span>標示售完</span></label>
-      <label class="field"><span class="field__label">圖片(會自動壓縮)</span>
-        <input class="input" name="image" type="file" accept="image/*"></label>
-      ${item?.hasImage ? '<label class="check"><input type="checkbox" name="removeImage"><span>移除目前圖片</span></label>' : ''}
+      <label class="switch"><input type="checkbox" name="featured" ${it.featured ? 'checked' : ''} ${canFeature ? '' : 'disabled'}><span>顯示在推薦區${canFeature ? '' : `(已達 ${MAX_FEATURED} 個上限)`}</span></label>
       ${itemTrFields(item)}`,
     actions: [{ label: '儲存', value: 'save' }],
+    onOpen: (dlg) => imageManager(dlg, imgList),
   });
   if (value !== 'save') return;
   const stockRaw = String(data.get('stockLimit') || '').trim();
@@ -183,10 +407,13 @@ async function editItem(item) {
     prepMinutes: Math.max(0, Math.round(Number(data.get('prepMinutes')) || 0)),
     description: String(data.get('description') || '').trim(),
     options: splitList(data.get('options')),
+    tags: splitList(data.get('tags')).slice(0, 5),
+    categoryId: data.get('categoryId') || null,
     stockLimit: stockRaw === '' ? null : Math.max(0, Math.round(Number(stockRaw))),
     soldCount: Math.max(0, Math.round(Number(data.get('soldCount')) || 0)),
     active: data.get('active') === 'on',
     soldOut: data.get('soldOut') === 'on',
+    featured: data.get('featured') === 'on',
   };
   if (!payload.name) {
     toast('請填寫名稱', 'danger');
@@ -197,12 +424,17 @@ async function editItem(item) {
     const tr = await buildItemI18n(payload, item, data);
     payload.i18n = tr.i18n;
     const id = await api.saveItem(item ? { id: item.id, ...payload } : payload);
-    const file = data.get('image');
-    if (file && file.size) {
-      const dataUrl = await compressImage(file);
-      await api.setItemImage(id, dataUrl);
-    } else if (data.get('removeImage') === 'on') {
-      await api.setItemImage(id, null);
+    // 照片有變動才更新
+    const order = imgList.map((img) => img.id);
+    const before = refs.map((r) => r.id);
+    const removed = refs.filter((r) => r.legacy || !order.includes(r.id));
+    const added = imgList.filter((img) => img.isNew);
+    if (added.length || removed.length || order.join() !== before.join()) {
+      await api.saveItemImages(id, {
+        add: added.map(({ id: imgId, small, large }) => ({ id: imgId, small, large })),
+        order,
+        remove: removed,
+      });
     }
     toast(translateNotice(tr), tr.failed ? 'info' : 'success', tr.auto || tr.failed ? 6000 : 3200);
   } catch (err) {
@@ -223,7 +455,7 @@ $('#item-rows').addEventListener('click', (e) => {
     try {
       if (act === 'edit') await editItem(item);
       if (act === 'delete') {
-        if (await confirmDialog('刪除品項', `確定要刪除「${item.name}」嗎？已成立的訂單明細不受影響。`, { confirmLabel: '刪除', danger: true })) {
+        if (await confirmDialog('刪除品項', `確定要刪除「${item.name}」嗎？照片會一併刪除，已成立的訂單明細不受影響。`, { confirmLabel: '刪除', danger: true })) {
           await api.deleteItem(id);
           toast('已刪除');
         }
@@ -238,6 +470,60 @@ $('#item-rows').addEventListener('click', (e) => {
           if (it.sortOrder !== i + 1) await api.saveItem({ id: it.id, sortOrder: i + 1 });
         }
       }
+    } catch (err) {
+      toast(errorText(err), 'danger');
+    }
+  });
+});
+
+// ===== 橫幅輪播(最多 5 張) =====
+function renderBanners() {
+  const box = $('#banner-list');
+  box.innerHTML = banners.length ? banners.map((b, i) => `
+    <div class="banner-admin__row" data-banner="${b.id}">
+      <img src="${b.data}" alt="橫幅 ${i + 1}">
+      <span class="text-sm">第 ${i + 1} 張</span>
+      <button class="btn btn--ghost btn--icon" data-banner-act="up" ${i === 0 ? 'disabled' : ''} aria-label="上移">${icon('arrow_upward')}</button>
+      <button class="btn btn--ghost btn--icon" data-banner-act="down" ${i === banners.length - 1 ? 'disabled' : ''} aria-label="下移">${icon('arrow_downward')}</button>
+      <button class="btn btn--ghost btn--icon" data-banner-act="delete" aria-label="刪除">${icon('delete')}</button>
+    </div>`).join('') : '<p class="muted text-sm">尚未上傳橫幅，點餐頁不會顯示輪播。</p>';
+  $('#banner-add').disabled = banners.length >= MAX_BANNERS;
+}
+
+$('#banner-add').addEventListener('click', () => $('#banner-file').click());
+
+$('#banner-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const out = await cropBannerImage(file);
+    if (!out) return;
+    await api.addBanner(out[0], Math.max(0, ...banners.map((b) => b.sortOrder || 0)) + 1);
+    toast('已新增橫幅', 'success');
+  } catch (err) {
+    toast(err.message && !err.code ? err.message : errorText(err), 'danger');
+  }
+});
+
+$('#banner-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-banner-act]');
+  if (!btn) return;
+  const id = btn.closest('[data-banner]').dataset.banner;
+  const index = banners.findIndex((b) => b.id === id);
+  withBusy(btn, async () => {
+    try {
+      const act = btn.dataset.bannerAct;
+      if (act === 'delete') {
+        if (await confirmDialog('刪除橫幅', `確定要刪除第 ${index + 1} 張橫幅嗎？`, { confirmLabel: '刪除', danger: true })) {
+          await api.deleteBanner(id);
+        }
+        return;
+      }
+      const target = act === 'up' ? index - 1 : index + 1;
+      const ids = banners.map((b) => b.id);
+      [ids[index], ids[target]] = [ids[target], ids[index]];
+      await api.reorderBanners(ids);
     } catch (err) {
       toast(errorText(err), 'danger');
     }
@@ -261,6 +547,12 @@ function fillSettings() {
   f.messageTemplates.value = (settings.messageTemplates || []).join('\n');
   f.smsTemplate.value = settings.smsTemplate || '';
   f.consentText.value = settings.consentText || '';
+  f.guideActive.checked = settings.guideActive !== false;
+  const gt = f.querySelector(`[name=guideType][value="${settings.guideType || ''}"]`);
+  if (gt) gt.checked = true;
+  f.guideMapUrl.value = settings.guideMapUrl || '';
+  updateGuideFields();
+  loadGuidePreview();
   for (const [lang] of TR_LANGS) {
     const tr = settings.i18n?.[lang] || {};
     f[`tr_${lang}_bannerText`].value = tr.bannerText || '';
@@ -329,9 +621,26 @@ $('#settings-form').addEventListener('submit', (e) => {
       messageTemplates: f.messageTemplates.value.split('\n').map((s) => s.trim()).filter(Boolean),
       smsTemplate: f.smsTemplate.value.trim(),
       consentText: f.consentText.value.trim(),
+      guideActive: f.guideActive.checked,
+      guideType: f.elements.guideType.value || '',
+      guideMapUrl: '',
     };
     if (!patch.paymentMethods.length) {
       toast('至少需要一種付款方式', 'danger');
+      return;
+    }
+    // Google 地圖：可貼整段嵌入碼或網址，只保留 https://www.google.com/maps/embed 開頭的網址
+    const rawMap = f.guideMapUrl.value.trim();
+    if (rawMap) {
+      const url = extractMapUrl(rawMap);
+      if (!url) {
+        toast('Google 地圖嵌入碼不正確：請到 Google 地圖 > 分享 > 嵌入地圖，複製 HTML 貼上', 'danger', 6000);
+        return;
+      }
+      patch.guideMapUrl = url;
+    }
+    if (patch.guideType === 'map' && !patch.guideMapUrl) {
+      toast('請貼上 Google 地圖嵌入碼，或把顯示內容改為「尚未設定」', 'danger', 5000);
       return;
     }
     try {
@@ -345,6 +654,63 @@ $('#settings-form').addEventListener('submit', (e) => {
       toast(errorText(err), 'danger');
     }
   });
+});
+
+// ===== 引導我去攤位 =====
+function extractMapUrl(raw) {
+  const m = raw.match(/src\s*=\s*["']([^"']+)["']/i);
+  const url = (m ? m[1] : raw).replace(/&amp;/g, '&').trim();
+  return /^https:\/\/www\.google\.com\/maps\/embed\?/.test(url) ? url : '';
+}
+
+function updateGuideFields() {
+  const type = $('#settings-form').elements.guideType.value;
+  for (const el of $$('[data-guide]')) el.hidden = el.dataset.guide !== type;
+}
+
+$('#settings-form').addEventListener('change', (e) => {
+  if (e.target.name === 'guideType') updateGuideFields();
+});
+
+async function loadGuidePreview() {
+  const img = $('#guide-preview');
+  let data = null;
+  try {
+    data = settings?.guideImageVersion ? await api.getSiteImage('guide') : null;
+  } catch (err) {
+    console.warn(err);
+  }
+  img.hidden = !data;
+  $('#guide-remove').hidden = !data;
+  if (data) img.src = data;
+}
+
+$('#guide-upload').addEventListener('click', () => $('#guide-file').click());
+
+$('#guide-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    // 位置圖維持原比例，只壓縮大小
+    const dataUrl = await compressImage(file, 1200);
+    await api.setSiteImage('guide', dataUrl);
+    await api.saveSettings({ guideImageVersion: Date.now() });
+    toast('已更新位置圖片', 'success');
+  } catch (err) {
+    toast(err.message && !err.code ? err.message : errorText(err), 'danger');
+  }
+});
+
+$('#guide-remove').addEventListener('click', async () => {
+  if (!await confirmDialog('移除位置圖片', '確定要移除位置圖片嗎？', { confirmLabel: '移除', danger: true })) return;
+  try {
+    await api.setSiteImage('guide', null);
+    await api.saveSettings({ guideImageVersion: 0 });
+    toast('已移除');
+  } catch (err) {
+    toast(errorText(err), 'danger');
+  }
 });
 
 // ===== 收支 =====
@@ -695,11 +1061,21 @@ requireStaff('manager', async (p) => {
     fillSettings();
   });
 
+  api.watchCategories((list) => {
+    categories = list;
+    renderItems();
+  });
+
+  api.watchBanners((list) => {
+    banners = list;
+    renderBanners();
+  });
+
   let lastImageKey = '';
   api.watchAllItems(async (list) => {
     items = list;
     renderItems();
-    const key = list.map((i) => `${i.id}:${i.imageVersion || 0}`).join('|');
+    const key = list.map((i) => `${i.id}:${(i.images || []).join(',')}:${i.imageVersion || 0}`).join('|');
     if (key !== lastImageKey) {
       lastImageKey = key;
       try {
