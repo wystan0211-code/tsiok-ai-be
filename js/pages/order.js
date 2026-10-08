@@ -11,7 +11,7 @@ import { escapeHtml, money, personName, TITLES } from '../core/format.js';
 import {
   countItems, priceLines, stockIssues, summarizeLines, normalizePhone, isValidPhone,
 } from '../core/order-logic.js';
-import { goTo, pageReady } from '../core/transition.js';
+import { goTo, pageReady, briefWait } from '../core/transition.js';
 import {
   t, getLang, itemCount, totalMoney, itemText, optionText, settingText, withOption,
   categoryText, tagsText,
@@ -156,8 +156,8 @@ function layoutMarquee(box, text) {
   const copies = Math.max(1, Math.ceil(box.clientWidth / unit));
   const half = Array.from({ length: copies }, (_, i) => `<span class="marquee__text" ${i ? 'aria-hidden="true"' : ''}>${escapeHtml(text)}</span>`).join('');
   track.innerHTML = half + half.replaceAll('<span class="marquee__text" >', '<span class="marquee__text" aria-hidden="true">');
-  // 速度固定約每秒 60px
-  box.style.setProperty('--marquee-duration', `${(unit * copies) / 60}s`);
+  // 速度固定約每秒 52px
+  box.style.setProperty('--marquee-duration', `${(unit * copies) / 52}s`);
 }
 
 let marqueeWidth = 0;
@@ -203,7 +203,7 @@ function goSlide(i, smooth = true) {
   carousel.programmatic = true;
   track.scrollTo({ left: carousel.index * track.clientWidth, behavior: smooth ? 'smooth' : 'auto' });
   updateDots();
-  setTimeout(() => { carousel.programmatic = false; }, 700);
+  setTimeout(() => { carousel.programmatic = false; }, 900);
 }
 
 function scheduleAutoplay() {
@@ -213,7 +213,7 @@ function scheduleAutoplay() {
     const visible = !$('#carousel').hidden && !$('#view-menu').hidden && !document.hidden;
     if (!visible || carousel.holding || Date.now() - carousel.lastInteract < AUTOPLAY_MS) return;
     goSlide(carousel.index + 1);
-  }, 1000);
+  }, 100); // 每 0.1 秒檢查，換張間隔準確為 5 秒
   carousel.lastInteract = Date.now();
 }
 
@@ -293,6 +293,11 @@ function coverHtml(item, cls) {
     : `<div class="${cls} ${cls}--empty">${icon('restaurant')}</div>`;
 }
 
+// 菜單與詳細頁的價格只顯示「$ 30」(不顯示 NT，所有語言相同)；購物車、確認訂單仍用 money()
+function menuMoney(n) {
+  return `$ ${Number(n || 0).toLocaleString('zh-TW')}`;
+}
+
 // 加入購物車的控制項(沿用 2.9 版設計)：
 // 沒有口味：先顯示 +，加入後變成「− 數量 +」；有口味：+ 開啟口味視窗，旁邊顯示已加入的數量
 function cartControl(item) {
@@ -313,7 +318,8 @@ function cartControl(item) {
   return `<button type="button" class="btn-add press" data-action="plus" data-id="${item.id}" aria-label="${t('order.add', { name })}">${icon('add')}</button>`;
 }
 
-// 品項列：照片在最左，文字緊貼照片右側，加入控制項在最右側(獨立一欄，不壓到其他內容)
+// 品項列：照片在最左，文字緊貼照片右側；品名與說明使用整個文字區寬度
+// 加入控制項固定在右下角、與價格同一列，展開成「− 數量 +」時只佔用價格那一列的空間
 function rowHtml(item) {
   const tx = itemText(item);
   const left = stockLeft(item);
@@ -324,10 +330,14 @@ function rowHtml(item) {
     <div class="mi__text">
       <h3 class="mi__name">${escapeHtml(tx.name)}</h3>
       ${tx.description ? `<p class="mi__desc">${escapeHtml(tx.description.split('\n')[0])}</p>` : ''}
-      <p class="mi__price">${money(item.price)}</p>
-      ${(tags.length || showLeft) ? `<p class="mi__tags">${tags.map((tg) => `<span class="tag">${escapeHtml(tg)}</span>`).join('')}${showLeft ? `<span class="badge badge--warning">${t('order.left', { n: left })}</span>` : ''}</p>` : ''}
+      <div class="mi__foot">
+        <div class="mi__foot-main">
+          <p class="mi__price">${menuMoney(item.price)}</p>
+          ${(tags.length || showLeft) ? `<p class="mi__tags">${tags.map((tg) => `<span class="tag">${escapeHtml(tg)}</span>`).join('')}${showLeft ? `<span class="badge badge--warning">${t('order.left', { n: left })}</span>` : ''}</p>` : ''}
+        </div>
+        <div class="mi-ctrl" data-ctrl="${item.id}">${cartControl(item)}</div>
+      </div>
     </div>
-    <div class="mi-ctrl" data-ctrl="${item.id}">${cartControl(item)}</div>
   </article>`;
 }
 
@@ -339,7 +349,7 @@ function featuredHtml(item) {
       <div class="mi-ctrl fc__ctrl" data-ctrl="${item.id}">${cartControl(item)}</div>
     </div>
     <h3 class="fc__name">${escapeHtml(tx.name)}</h3>
-    <p class="fc__price">${money(item.price)}</p>
+    <p class="fc__price">${menuMoney(item.price)}</p>
   </article>`;
 }
 
@@ -428,8 +438,9 @@ $('#menu-sections').addEventListener('click', (e) => {
     e.stopPropagation();
     const { action, id } = btn.dataset;
     if (action === 'plus') {
+      const wasEmpty = countItems(cart.lines) === 0;
       addToCart(id, null, 1);
-      bumpFeedback(id);
+      bumpFeedback(id, wasEmpty);
     }
     if (action === 'minus') {
       const idx = cart.lines.findIndex((l) => l.itemId === id);
@@ -467,18 +478,20 @@ async function chooseOption(itemId) {
   if (value !== 'add') return;
   const qty = Math.max(1, Math.min(max, Number(data.get('qty')) || 1));
   const option = data.get('option');
+  const wasEmpty = countItems(cart.lines) === 0;
   addToCart(itemId, option, qty);
-  bumpFeedback(itemId);
+  bumpFeedback(itemId, wasEmpty);
   toast(t('order.addedToast', { item: withOption(name, optionText(item, option)), qty }), 'info', ADDED_TOAST_MS);
 }
 
-// 加入購物車的動態回饋：控制項彈一下、底部購物車列跳一下
-function bumpFeedback(itemId) {
+// 加入購物車的動態回饋：控制項輕輕彈一下；購物車列只在加入第一件品項時跳一下
+function bumpFeedback(itemId, wasEmpty = false) {
   for (const el of $$(`[data-ctrl="${itemId}"]`)) {
     el.classList.remove('is-bump');
     void el.offsetWidth; // 重新觸發動畫
     el.classList.add('is-bump');
   }
+  if (!wasEmpty) return;
   const bar = $('#cart-bar');
   bar.classList.remove('is-bump');
   void bar.offsetWidth;
@@ -514,7 +527,7 @@ function renderDetail(id, fresh) {
     loadLarge(item);
   }
   $('#d-name').textContent = tx.name;
-  $('#d-price').textContent = money(item.price);
+  $('#d-price').textContent = menuMoney(item.price);
   const left = stockLeft(item);
   const showLeft = settings.showStockLeft !== false && left != null && left > 0 && left <= 10;
   const prep = $('#d-prep');
@@ -544,7 +557,7 @@ function updateDetailBar(item) {
   const btn = $('#detail-add');
   const soldOut = isSoldOut(item);
   btn.disabled = soldOut;
-  btn.textContent = soldOut ? t('order.soldOut') : t('detail.addWithPrice', { price: money(item.price * detail.qty) });
+  btn.textContent = soldOut ? t('order.soldOut') : t('detail.addWithPrice', { price: menuMoney(item.price * detail.qty) });
 }
 
 function renderGallery(item) {
@@ -635,6 +648,7 @@ $('#detail-add').addEventListener('click', (e) => {
   const item = itemsById()[detail.id];
   if (!item || isSoldOut(item) || btn.classList.contains('is-added')) return;
   const option = item.options?.length ? $('input[name=d-option]:checked')?.value || item.options[0] : null;
+  const wasEmpty = countItems(cart.lines) === 0;
   addToCart(item.id, option, detail.qty);
   const name = itemText(item).name;
   toast(t('order.addedToast', { item: option ? withOption(name, optionText(item, option)) : name, qty: detail.qty }), 'info', ADDED_TOAST_MS);
@@ -645,7 +659,7 @@ $('#detail-add').addEventListener('click', (e) => {
     btn.classList.remove('is-added');
     if (pushedFromMenu) history.back();
     else location.replace('#');
-    setTimeout(() => bumpFeedback(item.id), 60);
+    setTimeout(() => bumpFeedback(item.id, wasEmpty), 60);
   }, 280);
 });
 
@@ -693,6 +707,7 @@ $('#view-checkout').addEventListener('click', (e) => {
 // 查看訂單：記住菜單位置，返回時回到原處
 $('#cart-bar a').addEventListener('click', (e) => {
   e.preventDefault();
+  briefWait(300); // 約 0.3 秒的載入中畫面
   navigate('#checkout');
 });
 
@@ -771,13 +786,16 @@ async function submit() {
 async function loadCovers() {
   try {
     covers = await api.getItemImages(menu);
-    if (currentView().name === 'menu') renderMenu();
+    if (ready && settings && currentView().name === 'menu') renderMenu();
   } catch (err) {
     console.warn('圖片載入失敗', err);
   }
 }
 
 async function init() {
+  // 菜單、設定、分類、橫幅都是公開資料，與「登入＋確認點餐連結」同時開始讀取，縮短等待時間
+  // 連結確認通過(ready = true)之前，render() 不會顯示菜單
+  startWatchers();
   try {
     await api.initCustomer();
     const check = await api.checkSession(token);
@@ -798,6 +816,10 @@ async function init() {
     return;
   }
   ready = true;
+  render();
+}
+
+function startWatchers() {
   api.watchSettings((s) => {
     settings = s;
     render();

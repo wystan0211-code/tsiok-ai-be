@@ -44,14 +44,33 @@ function render() {
 }
 
 // ===== 語言 =====
-function applyDesign(lang) {
+// 預先載入並解碼好的設計圖：切換語言時直接換上，不必等下載
+const designCache = new Map();
+function loadDesign(src) {
+  if (!designCache.has(src)) {
+    const pre = new Image();
+    pre.decoding = 'async';
+    pre.src = src;
+    designCache.set(src, pre.decode().catch(() => undefined));
+  }
+  return designCache.get(src);
+}
+
+let wantedDesign = '';
+async function applyDesign(lang, immediate = false) {
   const img = $('#home-img');
   const src = DESIGN[lang] || DESIGN['zh-Hant'];
-  if (!img.src.endsWith(src)) img.src = src;
+  wantedDesign = src;
   for (const item of $$('.lang-menu__item')) {
     const on = item.dataset.lang === lang;
     item.setAttribute('aria-pressed', String(on));
     item.classList.toggle('is-current', on);
+  }
+  if (!img.src.endsWith(src)) {
+    // 第一次開啟頁面直接換，避免先閃出中文版；之後切換語言才等預載完成
+    if (!immediate) await loadDesign(src);
+    // 連續快速切換時，只套用最後選的語言
+    if (wantedDesign === src && !img.src.endsWith(src)) img.src = src;
   }
 }
 
@@ -88,7 +107,18 @@ document.addEventListener('keydown', (e) => {
 });
 
 onLangChange(applyDesign);
-applyDesign(getLang());
+applyDesign(getLang(), true);
+
+// 首頁顯示完成後，在背景預先下載其他語言的設計圖(圖片放在 GitHub Pages，不佔 Firebase 額度)
+// 手機開啟省流量模式時不預先下載
+function preloadDesigns() {
+  if (navigator.connection?.saveData) return;
+  const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 800));
+  idle(() => Object.values(DESIGN).forEach(loadDesign), { timeout: 2000 });
+}
+// 這支程式可能在頁面 load 之後才執行(需等 Firebase 載入)，所以兩種情況都要處理
+if (document.readyState === 'complete') preloadDesigns();
+else window.addEventListener('load', preloadDesigns);
 
 // ===== 開始點餐 =====
 $('#start-btn').addEventListener('click', (e) => withBusy(e.currentTarget, async () => {

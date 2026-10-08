@@ -163,7 +163,6 @@ button,
 }
 
 .btn:active:not(:disabled),
-.cat-chip:active,
 .radio-chip:active span,
 .stepper button:active {
   transform: scale(0.94);
@@ -1872,9 +1871,9 @@ html[lang='en'] .radio-chip span {
 .carousel__nav {
   position: absolute;
   top: 50%;
-  width: 36px;
-  height: 36px;
-  margin-top: -18px;
+  width: 28px;
+  height: 28px;
+  margin-top: -14px;
   border: none;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.45);
@@ -1887,12 +1886,13 @@ html[lang='en'] .radio-chip span {
 }
 
 .carousel__nav:active {
-  transform: scale(0.88);
+  transform: scale(0.9);
   transition-duration: 70ms;
 }
 
 .carousel__nav .icon {
   color: #ffffff;
+  font-size: 20px;
 }
 
 .carousel__nav--prev {
@@ -1939,6 +1939,15 @@ html[lang='en'] .radio-chip span {
   margin-top: var(--space-4);
 }
 
+/* 輪播圖與上方(跑馬燈或標題列)只留 8px */
+#view-menu {
+  margin-top: 0;
+}
+
+#view-menu > .carousel:first-child {
+  margin-top: calc(var(--space-2) - var(--space-4));
+}
+
 .cat-bar {
   position: sticky;
   top: 56px;
@@ -1963,8 +1972,12 @@ html[lang='en'] .radio-chip span {
 
 .cat-chip {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 36px;
   padding: 0 var(--space-4);
+  line-height: 1;
   border: 1px solid var(--color-control-border);
   border-radius: 18px;
   background: var(--color-surface);
@@ -2012,7 +2025,7 @@ html[lang='en'] .radio-chip span {
 
 .mi {
   display: grid;
-  grid-template-columns: 96px minmax(0, 1fr) auto; /* 照片 | 文字 | 加入控制項 */
+  grid-template-columns: 96px minmax(0, 1fr); /* 照片 | 文字(加入控制項在文字區右下角) */
   gap: var(--space-3);
   align-items: start;
   position: relative;
@@ -2100,12 +2113,37 @@ html[lang='en'] .radio-chip span {
   width: 96px;
 }
 
+/* 文字區下方一列：左邊價格與標籤，右邊加入控制項 */
+.mi__text {
+  align-self: stretch;
+}
+
+.mi__foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: auto;
+}
+
+.mi__foot-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 /* 加入購物車控制項：+、− 數量 +、×數量 + */
 .mi-ctrl {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  align-self: end;
+  flex-shrink: 0;
+}
+
+/* 「+」按下的縮放幅度較小 */
+.mi-ctrl .press:active:not(:disabled) {
+  transform: scale(0.93);
 }
 
 .mi-ctrl__count {
@@ -2147,12 +2185,13 @@ html[lang='en'] .radio-chip span {
 /* 加入購物車的動態回饋：彈一下 */
 .mi-ctrl.is-bump > *,
 .cart-bar.is-bump {
-  animation: bump 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: bump 240ms ease-out;
 }
 
+/* 幅度約 6%，避免反覆加入時視覺疲勞 */
 @keyframes bump {
   0% { transform: scale(1); }
-  40% { transform: scale(1.14); }
+  45% { transform: scale(1.06); }
   100% { transform: scale(1); }
 }
 
@@ -2226,24 +2265,37 @@ html[lang='en'] .radio-chip span {
   margin-top: var(--space-1);
 }
 
-/* 價格在左，製作時間緊接在右側，同一列 */
+/* 價格與製作時間同一列：這一列從中間平分，價格靠左(對齊品名)，時間從中線開始；兩者同為 16px */
 .detail__line {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-5);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+}
+
+.detail__line .detail__price {
+  padding-right: var(--space-2); /* 價格太長時與時間保持距離 */
+}
+
+.detail__line .detail__price {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  line-height: 1.5;
 }
 
 .detail__prep {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   color: var(--color-text-muted);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
+  line-height: 1.5;
 }
 
+/* 時鐘圖示與後方文字同色、同透明度、同大小 */
 .detail__prep .icon {
-  align-self: center;
+  color: inherit;
+  opacity: 1;
+  font-size: 1.125em;
 }
 
 .detail__tags {

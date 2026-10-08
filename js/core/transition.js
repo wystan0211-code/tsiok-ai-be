@@ -14,6 +14,16 @@ function showOverlay() {
   document.body.append(el);
 }
 
+// 同一頁內切換畫面(例如進入確認訂單)：短暫顯示等待畫面，背後同時切換，ms 後淡出
+export function briefWait(ms = 300) {
+  showOverlay();
+  const el = document.querySelector('.page-wait');
+  setTimeout(() => {
+    el?.classList.add('is-leaving');
+    setTimeout(() => el?.remove(), 200);
+  }, ms);
+}
+
 // 往前換頁：先顯示等待畫面，再前往新頁面
 export function goTo(url, { replace = false } = {}) {
   showOverlay();
