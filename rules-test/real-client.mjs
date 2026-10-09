@@ -14,14 +14,36 @@ const s = await (await fetch(`${PROD}/settings/app`)).json();
 await put('settings/app', s.fields);
 const items = await (await fetch(`${PROD}/items?pageSize=100`)).json();
 let pick = null;
+let pickSel = [];
+// Firestore REST 格式轉成一般物件
+const plain = (v) => {
+  if (!v) return v;
+  if ('mapValue' in v) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, x]) => [k, plain(x)]));
+  if ('arrayValue' in v) return (v.arrayValue.values || []).map(plain);
+  const [t, x] = Object.entries(v)[0];
+  return t === 'integerValue' ? Number(x) : t === 'nullValue' ? null : x;
+};
 for (const d of items.documents || []) {
   const id = d.name.split('/').pop();
   await put(`items/${id}`, d.fields);
-  const f = d.fields;
-  const noOpt = !f.optionGroups && !f.options;
-  if (!pick && f.active?.booleanValue !== false && f.soldOut?.booleanValue !== true && noOpt) pick = id;
+  const f = Object.fromEntries(Object.entries(d.fields).map(([k, v]) => [k, plain(v)]));
+  if (pick || f.active === false || f.soldOut === true) continue;
+  // 必填群組選前幾個未售完的選項(與網站的 groupRule 相同)
+  let groups = Array.isArray(f.optionGroups) ? f.optionGroups.filter((g) => g && g.choices?.length) : [];
+  if (!groups.length && Array.isArray(f.options) && f.options.length) groups = [{ id: 'g0', kind: 'required-single', choices: f.options.map((n, i) => ({ id: `c${i}` })) }];
+  const sel = [];
+  let ok = true;
+  for (const g of groups) {
+    const free = g.choices.filter((c) => !c.soldOut);
+    let need = 0;
+    if (g.kind === 'required-single') need = 1;
+    else if (g.kind === 'required-multi') need = Math.max(1, Math.min(g.choices.length, Number(g.min) || 1));
+    if (free.length < need) { ok = false; break; }
+    free.slice(0, need).forEach((c) => sel.push(`${g.id}:${c.id}`));
+  }
+  if (ok) { pick = id; pickSel = sel; }
 }
-log('items', (items.documents || []).length, 'pick', pick);
+log('items', (items.documents || []).length, 'pick', pick, JSON.stringify(pickSel));
 await put('counters/A', { value: { integerValue: '0' }, lastOrderId: { nullValue: null } });
 await put('orders/PpXRKMzZmfWgMQlS3YXm', { type: { stringValue: 'preorder' }, status: { stringValue: 'picked' }, seq: { integerValue: '1' }, no: { stringValue: 'A001' } });
 await put('lookups/A001_0900000000', { orderId: { stringValue: 'PpXRKMzZmfWgMQlS3YXm' }, createdAt: { timestampValue: '2026-10-08T03:18:36.663Z' } });
@@ -46,11 +68,12 @@ await page.route('**/js/api/firebase.js', async (route) => {
   await route.fulfill({ response: res, body, headers: { ...res.headers(), 'content-type': 'text/javascript' } });
 });
 const B = 'http://127.0.0.1:8000/';
+process.on('unhandledRejection', (e) => { log('script error', String(e).slice(0, 300)); process.exit(0); });
 await page.goto(B + 'index.html');
 await page.waitForSelector('#start-btn:not([hidden])', { timeout: 30000 });
 await page.click('#start-btn');
 await page.waitForURL(/order\.html\?t=/, { timeout: 30000 });
-await page.evaluate((id) => localStorage.setItem('tab-cart', JSON.stringify({ lines: [{ itemId: id, sel: [], qty: 1 }] })), pick);
+await page.evaluate(([id, sel]) => localStorage.setItem('tab-cart', JSON.stringify({ lines: [{ itemId: id, sel, qty: 1 }] })), [pick, pickSel]);
 await page.reload();
 await page.waitForTimeout(3000);
 await page.evaluate(() => { location.hash = '#info'; });
