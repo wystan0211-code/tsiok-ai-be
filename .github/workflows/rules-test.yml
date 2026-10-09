@@ -1,0 +1,23 @@
+# 安全規則測試(僅在 debug-rules 分支執行，不影響正式網站)
+name: rules-test
+on:
+  push:
+    branches: [debug-rules]
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rules-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm install --no-audit --no-fund firebase-tools@14 @firebase/rules-unit-testing@4 firebase@11
+      - run: npx firebase emulators:exec --only firestore --project demo-tsiok "node test.mjs"
