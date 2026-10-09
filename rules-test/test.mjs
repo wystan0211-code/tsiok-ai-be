@@ -11,7 +11,14 @@ const env = await initializeTestEnvironment({
 });
 const ts = () => firebase.firestore.FieldValue.serverTimestamp();
 
-async function seed({ lookupExists = false, uid, staffRole = null }) {
+// 用模擬器 REST(owner 權限)寫入指定型別的欄位，例如小數 0.0
+async function restSet(path, fields) {
+  const url = `http://127.0.0.1:8080/v1/projects/demo-tsiok/databases/(default)/documents/${path}`;
+  const r = await fetch(url, { method: 'PATCH', headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }) });
+  if (!r.ok) throw new Error(`REST ${r.status} ${await r.text()}`);
+}
+
+async function seed({ lookupExists = false, uid, staffRole = null, counterDouble = false, maxDouble = false, settingsExtra = null }) {
   await env.clearFirestore();
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
@@ -22,11 +29,13 @@ async function seed({ lookupExists = false, uid, staffRole = null }) {
     if (lookupExists) await db.doc('lookups/A001_0900000000').set({ orderId: 'oldOrder', createdAt: new Date() });
     if (staffRole) await db.doc(`users/${uid}`).set({ role: staffRole, disabled: false });
   });
+  if (counterDouble) await restSet('counters/A', { value: { doubleValue: 0 }, lastOrderId: { stringValue: 'oldOrder' } });
+  if (maxDouble) await restSet('settings/app', { acceptingPreorders: { booleanValue: true }, maxItemsPerOrder: { doubleValue: 10 } });
 }
 
 // 與 js/api/firebase.js 的 startSession、submitPreorder 相同的寫入
-async function run(label, { uid = 'cust1', lookupExists = false, staffRole = null, subPref = 'remove', title = '先生', lang = 'zh-Hant' } = {}) {
-  await seed({ lookupExists, uid, staffRole });
+async function run(label, { uid = 'cust1', lookupExists = false, staffRole = null, subPref = 'remove', title = '先生', lang = 'zh-Hant', counterDouble = false, maxDouble = false, items = null } = {}) {
+  await seed({ lookupExists, uid, staffRole, counterDouble, maxDouble });
   const db = env.authenticatedContext(uid).firestore();
   const phone = '0900000000';
   try {
@@ -44,7 +53,7 @@ async function run(label, { uid = 'cust1', lookupExists = false, staffRole = nul
       tx.set(db.doc('counters/A'), { value: seq, lastOrderId: orderRef.id });
       tx.set(orderRef, {
         type: 'preorder', seq, no, status: 'pending', uid,
-        items: [{ itemId: 'cake', qty: 1, option: null }], itemCount: 1, surname: '王', title, lang, pushEnabled: false, subPref,
+        items: items || [{ itemId: 'cake', qty: 1, option: null }], itemCount: (items || [{ qty: 1 }]).reduce((a, l) => a + l.qty, 0), surname: '王', title, lang, pushEnabled: false, subPref,
         createdAt: ts(), updatedAt: ts(),
       });
       tx.set(db.doc(`contacts/${orderRef.id}`), {
@@ -65,4 +74,7 @@ await run('一般顧客');
 await run('一般顧客＋查詢紀錄已存在', { lookupExists: true });
 await run('管理員帳號登入中', { uid: ADMIN });
 await run('店員帳號登入中', { uid: 'staff1', staffRole: 'staff' });
+await run('計數器數值為小數 0.0', { counterDouble: true });
+await run('數量上限為小數 10.0', { maxDouble: true });
+await run('多行明細含選項', { items: [{ itemId: 'cake', qty: 2, option: '糖粉', sel: ['g0:c1'] }, { itemId: 'cake', qty: 1, option: null }] });
 await env.cleanup();
