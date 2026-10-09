@@ -7,6 +7,7 @@ import { formatNo, randomToken, startOfDay, pad2 } from '../core/format.js';
 import { itemImageRefs, imageDocId } from '../core/images.js';
 import {
   countItems, isFinal, priceLines, stockProblems, stockUpdates, ORDER_TTL_MS, ACTIVE_STATUSES,
+  optionProblems, cleanLines,
 } from '../core/order-logic.js';
 
 const SDK = `https://www.gstatic.com/firebasejs/${CONFIG.firebaseSdkVersion}`;
@@ -104,9 +105,6 @@ async function readItems(tx, lines) {
   return map;
 }
 
-function cleanLines(lines) {
-  return lines.map((l) => ({ itemId: l.itemId, qty: l.qty, option: l.option ?? null }));
-}
 
 // 呼叫 Apps Script(推播、帳號管理)，附上目前登入者的身分憑證
 async function callScript(action, payload = {}) {
@@ -267,14 +265,14 @@ export const api = {
         const [cSnap, sSnap] = await Promise.all([tx.get(ref('counters', 'A')), tx.get(sessionRef)]);
         if (!sSnap.exists() || sSnap.data().used) throw new ApiError('session-invalid');
         const itemsById = await readItems(tx, lines);
-        const problems = stockProblems(lines, itemsById);
+        const problems = [...stockProblems(lines, itemsById), ...optionProblems(lines, itemsById)];
         if (problems.length) throw new ApiError('sold-out', `無法供應：${problems.join('、')}`);
         const seq = (cSnap.exists() ? cSnap.data().value : 0) + 1;
         const no = formatNo('preorder', seq);
         tx.set(ref('counters', 'A'), { value: seq, lastOrderId: orderRef.id });
         tx.set(orderRef, {
           type: 'preorder', seq, no, status: 'pending', uid,
-          items: cleanLines(lines), itemCount: count, surname, title, lang, pushEnabled: false,
+          items: cleanLines(lines, itemsById), itemCount: count, surname, title, lang, pushEnabled: false,
           createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
         });
         tx.set(ref('contacts', orderRef.id), {
@@ -493,7 +491,7 @@ export const api = {
       tx.set(ref('counters', 'B'), { value: seq, lastOrderId: orderRef.id });
       tx.set(orderRef, {
         type: 'walkin', seq, no, status: later ? 'accepted' : 'picked', later: !!later,
-        uid: null, claimedBy: null, items: cleanLines(lines), lines: priced.lines, total: priced.total,
+        uid: null, claimedBy: null, items: cleanLines(lines, itemsById), lines: priced.lines, total: priced.total,
         itemCount: countItems(lines), payment, surname, title, pushEnabled: false, messages: [], createdBy: staffUid,
         createdAt: now, updatedAt: now, acceptedAt: now, establishedAt: now,
         ...(later ? {} : { readyAt: now, pickedAt: now }),

@@ -6,6 +6,7 @@ import { itemImageRefs, imageDocId } from '../core/images.js';
 import { formatNo, randomToken, startOfDay } from '../core/format.js';
 import {
   countItems, isFinal, priceLines, stockProblems, stockUpdates, ORDER_TTL_MS, ACTIVE_STATUSES,
+  optionProblems, cleanLines,
 } from '../core/order-logic.js';
 
 const DB_KEY = 'tab-demo-db-v1';
@@ -267,7 +268,7 @@ export const api = {
     if (!session || session.used) throw new ApiError('session-invalid');
     const lock = db.activePhones[phone];
     if (lock && !isFinal(db.orders[lock.orderId])) throw new ApiError('phone-active');
-    const problems = stockProblems(lines, itemsMap());
+    const problems = [...stockProblems(lines, itemsMap()), ...optionProblems(lines, itemsMap())];
     if (problems.length) throw new ApiError('sold-out', `無法供應：${problems.join('、')}`);
 
     const id = newId();
@@ -276,7 +277,7 @@ export const api = {
     const now = Date.now();
     db.orders[id] = {
       id, type: 'preorder', seq, no, status: 'pending', uid,
-      items: lines.map((l) => ({ itemId: l.itemId, qty: l.qty, option: l.option ?? null })),
+      items: cleanLines(lines, itemsMap()),
       itemCount: count, surname, title, lang, pushEnabled: false, messages: [],
       createdAt: now, updatedAt: now,
     };
@@ -460,7 +461,7 @@ export const api = {
     db.orders[id] = {
       id, type: 'walkin', seq, no, status: later ? 'accepted' : 'picked', later: !!later,
       uid: null, claimedBy: null,
-      items: lines.map((l) => ({ itemId: l.itemId, qty: l.qty, option: l.option ?? null })),
+      items: cleanLines(lines, itemsMap()),
       lines: priced.lines, total: priced.total, itemCount: countItems(lines),
       payment, surname, title, pushEnabled: false, messages: [], createdBy: staff.uid,
       createdAt: now, updatedAt: now, acceptedAt: now, establishedAt: now,

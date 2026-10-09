@@ -14,6 +14,10 @@ import { compressImage } from '../core/image.js';
 import { cropItemImage, cropBannerImage } from '../core/cropper.js';
 import { itemImageRefs, MAX_ITEM_IMAGES, MAX_BANNERS } from '../core/images.js';
 import { randomToken } from '../core/format.js';
+import { optionGroups, blockedByOptions } from '../core/options.js';
+import {
+  groupsFromItem, groupEditorHtml, mountGroupEditor, validateGroups, groupsForSave, buildGroupI18n,
+} from './admin-options.js';
 import { qrSvg } from '../core/qr.js';
 
 showDemoBanner(IS_DEMO);
@@ -149,6 +153,7 @@ function renderItems() {
     const status = [
       it.active ? '<span class="badge badge--success">上架</span>' : '<span class="badge">下架</span>',
       it.soldOut ? '<span class="badge badge--danger">售完</span>' : '',
+      !it.soldOut && blockedByOptions(it) ? '<span class="badge badge--danger" title="必填群組的選項全部售完">選項售完</span>' : '',
       it.featured ? '<span class="badge badge--primary">推薦</span>' : '',
     ].join(' ');
     const count = itemImageRefs(it).length;
@@ -158,7 +163,7 @@ function renderItems() {
     const meta = [catName(it.categoryId) || '未分類', ...(it.tags || []).map((t) => `#${t}`)].join('・');
     return `<tr data-item="${it.id}">
       <td>${thumb}${count > 1 ? `<div class="muted text-xs">${count} 張</div>` : ''}</td>
-      <td><strong>${escapeHtml(it.name)}</strong><div class="muted text-sm">${escapeHtml(meta)}</div>${it.options?.length ? `<div class="muted text-sm">選項：${escapeHtml(it.options.join('、'))}</div>` : ''}</td>
+      <td><strong>${escapeHtml(it.name)}</strong><div class="muted text-sm">${escapeHtml(meta)}</div>${optionGroups(it).length ? `<div class="muted text-sm">選項：${escapeHtml(optionGroups(it).map((g) => g.name).join('、'))}</div>` : ''}</td>
       <td class="num">${money(it.price)}</td>
       <td class="num">${it.soldCount || 0} / ${it.stockLimit ?? '不限'}</td>
       <td>${status}</td>
@@ -199,8 +204,6 @@ function itemTrFields(item) {
             <input class="input" name="tr_${lang}_name" maxlength="60" value="${escapeHtml(tr.name || '')}"></label>
           <label class="field"><span class="field__hint">說明</span>
             <textarea class="textarea" name="tr_${lang}_description" maxlength="600" rows="2">${escapeHtml(tr.description || '')}</textarea></label>
-          <label class="field"><span class="field__hint">選項(用頓號、分隔，順序與中文相同)</span>
-            <input class="input" name="tr_${lang}_options" value="${escapeHtml((tr.options || []).join('、'))}"></label>
           <label class="field"><span class="field__hint">標籤(用頓號、分隔，順序與中文相同)</span>
             <input class="input" name="tr_${lang}_tags" value="${escapeHtml((tr.tags || []).join('、'))}"></label>
         </fieldset>`;
@@ -214,7 +217,6 @@ async function buildItemI18n(payload, oldItem, data) {
   const changed = {
     name: payload.name !== (old.name || ''),
     description: payload.description !== (old.description || ''),
-    options: payload.options.join('、') !== (old.options || []).join('、'),
     tags: payload.tags.join('、') !== (old.tags || []).join('、'),
   };
   const listNeedsAuto = (typed, src, oldTr, srcChanged) => src.length && (typed.length !== src.length
@@ -226,27 +228,23 @@ async function buildItemI18n(payload, oldItem, data) {
     const typed = {
       name: str(data.get(`tr_${lang}_name`)),
       description: payload.description ? str(data.get(`tr_${lang}_description`)) : '',
-      options: payload.options.length ? splitList(data.get(`tr_${lang}_options`)) : [],
       tags: payload.tags.length ? splitList(data.get(`tr_${lang}_tags`)) : [],
     };
     result[lang] = typed;
     if (needAuto(typed.name, oldTr.name, changed.name)) todo.push([lang, 'name']);
     if (payload.description && needAuto(typed.description, oldTr.description, changed.description)) todo.push([lang, 'description']);
-    if (listNeedsAuto(typed.options, payload.options, oldTr.options, changed.options)) todo.push([lang, 'options']);
     if (listNeedsAuto(typed.tags, payload.tags, oldTr.tags, changed.tags)) todo.push([lang, 'tags']);
   }
   if (!todo.length) return { i18n: result, auto: 0, failed: false };
   const langs = [...new Set(todo.map(([l]) => l))];
-  const optStart = 2;
-  const tagStart = 2 + payload.options.length;
-  const res = await api.translate([payload.name, payload.description, ...payload.options, ...payload.tags], langs);
+  const tagStart = 2;
+  const res = await api.translate([payload.name, payload.description, ...payload.tags], langs);
   if (!res) return { i18n: result, auto: 0, failed: true };
   for (const [lang, field] of todo) {
     const list = res[lang];
     if (!list) continue;
     if (field === 'name') result[lang].name = list[0] || '';
     if (field === 'description') result[lang].description = list[1] || '';
-    if (field === 'options') result[lang].options = list.slice(optStart, tagStart);
     if (field === 'tags') result[lang].tags = list.slice(tagStart);
   }
   return { i18n: result, auto: todo.length, failed: false };
@@ -336,7 +334,7 @@ function imageManager(dlg, list) {
 
 async function editItem(item) {
   const it = item || {
-    name: '', price: 0, description: '', prepMinutes: 5, options: [], stockLimit: null,
+    name: '', price: 0, description: '', prepMinutes: 5, optionGroups: [], stockLimit: null,
     soldCount: 0, active: true, soldOut: false, categoryId: null, featured: false, tags: [],
   };
   // 現有照片：先載入小圖當預覽
@@ -353,12 +351,14 @@ async function editItem(item) {
   const imgList = refs.map((r) => (r.legacy
     ? { id: randomToken(8), isNew: true, src: thumbs[r.id], small: thumbs[r.id], large: thumbs[r.id] }
     : { ...r, src: thumbs[r.id] || '' })).filter((img) => img.src || !img.isNew);
+  // 選項群組的可編輯狀態(舊版的「選項」會自動轉成一個必填單選群組，翻譯一併帶入)
+  const groups = groupsFromItem(item);
   const featuredOthers = items.filter((x) => x.featured && x.id !== item?.id).length;
   const canFeature = it.featured || featuredOthers < MAX_FEATURED;
 
   const { value, data } = await openDialog({
     title: item ? `編輯 ${item.name}` : '新增品項',
-    size: 'wide',
+    size: 'xwide',
     body: `
       <div class="field">
         <span class="field__label">照片(最多 ${MAX_ITEM_IMAGES} 張，第一張為菜單封面；可用箭頭或拖曳調整順序)</span>
@@ -381,9 +381,7 @@ async function editItem(item) {
       <label class="field"><span class="field__label">說明</span>
         <textarea class="textarea" name="description" maxlength="300" rows="3">${escapeHtml(it.description || '')}</textarea>
         <span class="field__hint">菜單只顯示第一行，完整內容在品項詳細頁顯示</span></label>
-      <label class="field"><span class="field__label">選項(用頓號、分隔，例如：糖粉、巧克力)</span>
-        <input class="input" name="options" value="${escapeHtml((it.options || []).join('、'))}">
-        <span class="field__hint">留空代表沒有選項；有選項時顧客必須選一個</span></label>
+      ${groupEditorHtml()}
       <label class="field"><span class="field__label">標籤(用頓號、分隔，例如：人氣、辣)</span>
         <input class="input" name="tags" maxlength="60" value="${escapeHtml((it.tags || []).join('、'))}"></label>
       <div class="row" style="align-items:flex-start">
@@ -397,7 +395,18 @@ async function editItem(item) {
       <label class="switch"><input type="checkbox" name="featured" ${it.featured ? 'checked' : ''} ${canFeature ? '' : 'disabled'}><span>顯示在推薦區${canFeature ? '' : `(已達 ${MAX_FEATURED} 個上限)`}</span></label>
       ${itemTrFields(item)}`,
     actions: [{ label: '儲存', value: 'save' }],
-    onOpen: (dlg) => imageManager(dlg, imgList),
+    onOpen: (dlg) => {
+      imageManager(dlg, imgList);
+      mountGroupEditor(dlg, groups, { items, currentId: item?.id || null });
+      // 按「儲存」前檢查選項群組，有問題時不關閉視窗，保留已填的內容
+      dlg.querySelector('form').addEventListener('submit', (e) => {
+        if (e.submitter?.value !== 'save') return;
+        const err = validateGroups(groups);
+        if (!err) return;
+        e.preventDefault();
+        toast(err, 'danger', 5000);
+      });
+    },
   });
   if (value !== 'save') return;
   const stockRaw = String(data.get('stockLimit') || '').trim();
@@ -406,7 +415,8 @@ async function editItem(item) {
     price: Math.max(0, Math.round(Number(data.get('price')) || 0)),
     prepMinutes: Math.max(0, Math.round(Number(data.get('prepMinutes')) || 0)),
     description: String(data.get('description') || '').trim(),
-    options: splitList(data.get('options')),
+    optionGroups: groupsForSave(groups),
+    options: [], // 舊格式欄位清空，改用 optionGroups
     tags: splitList(data.get('tags')).slice(0, 5),
     categoryId: data.get('categoryId') || null,
     stockLimit: stockRaw === '' ? null : Math.max(0, Math.round(Number(stockRaw))),
@@ -422,6 +432,13 @@ async function editItem(item) {
   if (!item) payload.sortOrder = Math.max(0, ...items.map((i) => i.sortOrder || 0)) + 1;
   try {
     const tr = await buildItemI18n(payload, item, data);
+    const gtr = await buildGroupI18n(groups, item);
+    for (const lang of Object.keys(tr.i18n)) {
+      tr.i18n[lang].groups = gtr.groups[lang] || {};
+      tr.i18n[lang].options = [];
+    }
+    tr.auto += gtr.auto;
+    tr.failed = tr.failed || gtr.failed;
     payload.i18n = tr.i18n;
     const id = await api.saveItem(item ? { id: item.id, ...payload } : payload);
     // 照片有變動才更新

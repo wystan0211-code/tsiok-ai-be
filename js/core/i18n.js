@@ -82,9 +82,7 @@ const DICT = {
   'order.phone': ['手機號碼', 'Mobile number', '携帯電話番号'],
   'order.submit': ['送出訂單', 'Place order', '注文を確定する'],
   'order.optionLegend': ['口味 / 選項', 'Flavor / option', '味・オプション'],
-  'order.addBtn': ['加入', 'Add', '追加'],
   'order.added': ['已加入', 'Added', '追加しました'],
-  'order.addedToast': ['已加入 {item}×{qty}', 'Added {item} ×{qty}', '{item}×{qty}を追加しました'],
   'order.errSurname': ['請填寫姓氏。', 'Please enter your last name.', '名字を入力してください。'],
   'order.errTitle': ['請選擇稱謂。', 'Please choose a title.', '性別を選択してください。'],
   'order.errPhone': ['手機號碼格式不正確，請輸入 09 開頭的 10 碼號碼。', 'Invalid mobile number. Please enter a 10-digit Taiwan number starting with 09.', '携帯電話番号の形式が正しくありません。09で始まる10桁の台湾の番号を入力してください。'],
@@ -172,7 +170,8 @@ const DICT = {
   'carousel.label': ['宣傳輪播', 'Promotions', 'お知らせ'],
   'carousel.prev': ['上一張', 'Previous', '前へ'],
   'carousel.next': ['下一張', 'Next', '次へ'],
-  'detail.addWithPrice': ['加入 · {price}', 'Add · {price}', '追加 · {price}'],
+  'detail.addToOrder': ['加入訂單', 'Add to order', '注文に追加'],
+  'detail.required': ['必填', 'Required', '必須'],
   'detail.photo': ['照片 {i} / {n}', 'Photo {i} of {n}', '写真 {i} / {n}'],
 
   // 取餐提醒、通知、引導

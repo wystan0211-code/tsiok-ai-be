@@ -1,4 +1,5 @@
 // 訂單共用邏輯：計價、庫存、狀態判斷。前台、攤位與後端(展示模式)共用同一套規則
+import { normalizeSel, selPrice, selText, selProblems, blockedByOptions } from './options.js';
 
 export const FINAL_STATUSES = ['picked', 'rejected', 'cancelled'];
 export const ACTIVE_STATUSES = ['pending', 'accepted', 'ready'];
@@ -46,13 +47,17 @@ export function priceLines(lines, itemsById) {
       missing.push(l.itemId);
       continue;
     }
+    // 單價 = 品項價格 + 選項加價；option 存中文選項文字(攤位、試算表顯示用)
+    const sel = normalizeSel(item, l);
+    const price = item.price + selPrice(item, sel);
     out.push({
       itemId: l.itemId,
       name: item.name,
-      price: item.price,
+      price,
       qty: l.qty,
-      option: l.option ?? null,
-      subtotal: item.price * l.qty,
+      option: selText(item, sel) || null,
+      sel,
+      subtotal: price * l.qty,
     });
   }
   return { lines: out, total: out.reduce((s, l) => s + l.subtotal, 0), missing };
@@ -67,7 +72,7 @@ export function stockIssues(lines, itemsById) {
     const item = itemsById[id];
     if (!item) issues.push({ item: null, kind: 'deleted' });
     else if (!item.active) issues.push({ item, kind: 'inactive' });
-    else if (item.soldOut) issues.push({ item, kind: 'soldout' });
+    else if (item.soldOut || blockedByOptions(item)) issues.push({ item, kind: 'soldout' });
     else if (item.stockLimit != null && (item.soldCount || 0) + qty > item.stockLimit) {
       issues.push({ item, kind: 'short', left: Math.max(0, item.stockLimit - (item.soldCount || 0)) });
     }
@@ -82,6 +87,30 @@ export function stockProblems(lines, itemsById) {
     if (kind === 'inactive') return `${item.name}(已下架)`;
     if (kind === 'soldout') return `${item.name}(已售完)`;
     return `${item.name}(剩 ${left} 份)`;
+  });
+}
+
+// 送出預點前檢查選項：必填未選、選到售完的選項、超過上限(中文說明)
+export function optionProblems(lines, itemsById) {
+  const out = [];
+  for (const l of lines) {
+    const item = itemsById[l.itemId];
+    if (!item) continue;
+    const problems = selProblems(item, normalizeSel(item, l));
+    if (problems.length) out.push(`${item.name}(選項${problems[0].reason === 'soldout' ? '已售完' : '不完整'})`);
+  }
+  return out;
+}
+
+// 送到資料庫的訂單明細：品項、數量、選擇(sel)與中文選項文字
+export function cleanLines(lines, itemsById = {}) {
+  return lines.map((l) => {
+    const item = itemsById[l.itemId];
+    const sel = item ? normalizeSel(item, l) : (Array.isArray(l.sel) ? l.sel.slice(0, 50) : []);
+    const option = item ? (selText(item, sel) || null) : (l.option ?? null);
+    const out = { itemId: l.itemId, qty: l.qty, option: option ? option.slice(0, 200) : null };
+    if (sel.length) out.sel = sel;
+    return out;
   });
 }
 

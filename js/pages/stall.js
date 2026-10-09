@@ -18,6 +18,10 @@ import { chime, startChimeLoop, stopChimeLoop, unlockAudio } from '../core/sound
 import { qrSvg } from '../core/qr.js';
 import { personNameFor } from '../core/i18n.js';
 import { DEFAULT_SETTINGS } from '../core/defaults.js';
+import {
+  optionGroups, hasOptions, groupRule, ruleText, sortedChoices, blockedByOptions,
+  normalizeSel, selPrice, selText, selKey, selProblems, addOnText,
+} from '../core/options.js';
 
 const LANG_BADGE = { en: 'EN', ja: '日' };
 // 固定的拒絕原因直接對照翻譯，不必呼叫翻譯服務
@@ -124,7 +128,7 @@ function cardHtml(o, forceOpen = false) {
           <span>${money(total)}</span>
           ${badges}
         </div>
-        <div class="muted text-sm">${escapeHtml(summarizeLines(lines))}</div>
+        <div class="muted text-sm order-card__peek">${escapeHtml(summarizeLines(lines))}</div>
       </summary>
       <div class="order-card__body">
         <ul class="order-card__lines">
@@ -414,7 +418,7 @@ function renderPosGrid() {
   }
   grid.innerHTML = menu.map((item) => {
     const left = item.stockLimit != null ? Math.max(0, item.stockLimit - (item.soldCount || 0)) : null;
-    const soldOut = item.soldOut || left === 0;
+    const soldOut = item.soldOut || left === 0 || blockedByOptions(item);
     return `<button type="button" class="pos-item" data-pos-add="${item.id}" ${soldOut ? 'disabled' : ''}>
       <span class="pos-item__name">${escapeHtml(item.name)}</span>
       <span class="row text-sm"><span>${money(item.price)}</span>${soldOut ? '<span class="badge badge--danger">售完</span>' : (left != null ? `<span class="muted">剩 ${left}</span>` : '')}</span>
@@ -428,9 +432,12 @@ function renderPosCart() {
   $('#pos-lines').innerHTML = pos.lines.length ? pos.lines.map((l, i) => {
     const item = map[l.itemId];
     if (!item) return '';
+    const sel = normalizeSel(item, l);
+    const opt = selText(item, sel);
+    const unit = item.price + selPrice(item, sel);
     return `<div class="cart-line">
-      <div class="cart-line__name">${escapeHtml(item.name)}${l.option ? `<span class="muted">(${escapeHtml(l.option)})</span>` : ''}
-        <div class="muted text-sm">${money(item.price * l.qty)}</div></div>
+      <div class="cart-line__name">${escapeHtml(item.name)}${opt ? `<span class="muted">(${escapeHtml(opt)})</span>` : ''}
+        <div class="muted text-sm">${money(unit * l.qty)}</div></div>
       <div class="stepper">
         <button type="button" data-pos-line="${i}" data-delta="-1" aria-label="減少">${icon(l.qty === 1 ? 'delete' : 'remove', 'icon--sm')}</button>
         <span class="stepper__value">${l.qty}</span>
@@ -453,10 +460,12 @@ function renderPosCart() {
     <label class="radio-chip"><input type="radio" name="payment" value="${escapeHtml(m)}" ${m === pos.payment ? 'checked' : ''}><span>${escapeHtml(m)}</span></label>`).join('');
 }
 
-function posAdd(itemId, option, qty = 1) {
-  const line = pos.lines.find((l) => l.itemId === itemId && (l.option ?? null) === (option ?? null));
+// 相同品項且相同選擇合併為同一列
+function posAdd(itemId, sel = [], qty = 1) {
+  const key = selKey(sel);
+  const line = pos.lines.find((l) => l.itemId === itemId && selKey(l.sel || []) === key);
   if (line) line.qty += qty;
-  else pos.lines.push({ itemId, option: option ?? null, qty });
+  else pos.lines.push({ itemId, sel: sel.slice(), qty });
   savePos();
   renderPosCart();
 }
@@ -466,18 +475,45 @@ $('#pos-grid').addEventListener('click', async (e) => {
   if (!btn) return;
   const item = itemsById()[btn.dataset.posAdd];
   if (!item) return;
-  if (!item.options?.length) {
-    posAdd(item.id, null);
+  if (!hasOptions(item)) {
+    posAdd(item.id, []);
     return;
   }
+  posChoose(item);
+});
+
+// 現場點餐：選擇選項群組(必填單選、非必填複選、必填複選)，未完成時保留選擇並提示
+async function posChoose(item, prev = [], prevQty = 1, error = '') {
+  const picked = new Set(prev);
+  const groups = optionGroups(item);
   const { value, data } = await openDialog({
     title: item.name,
-    body: `<div class="radio-group">${item.options.map((opt, i) => `<label class="radio-chip"><input type="radio" name="option" value="${escapeHtml(opt)}" ${i === 0 ? 'checked' : ''}><span>${escapeHtml(opt)}</span></label>`).join('')}</div>
-      <label class="field"><span class="field__label">數量</span><input class="input" type="number" name="qty" min="1" max="99" value="1"></label>`,
+    body: `${error ? `<p class="banner banner--danger">${escapeHtml(error)}</p>` : ''}
+      ${groups.map((g) => {
+        const { multi, required } = groupRule(g);
+        return `<fieldset class="field" style="border:none;padding:0;margin:0 0 var(--space-3)">
+          <legend class="field__label">${escapeHtml(g.name)}<span class="muted text-sm">・${escapeHtml(ruleText(g))}${required ? '・必填' : ''}</span></legend>
+          <div class="radio-group">${sortedChoices(g).map((c) => {
+            const key = `${g.id}:${c.id}`;
+            return `<label class="radio-chip"><input type="${multi ? 'checkbox' : 'radio'}" name="${multi ? `m_${g.id}` : `s_${g.id}`}" value="${escapeHtml(key)}" ${picked.has(key) ? 'checked' : ''} ${c.soldOut ? 'disabled' : ''}><span${c.soldOut ? ' style="text-decoration:line-through;opacity:.5"' : ''}>${escapeHtml(c.name)}${c.price > 0 ? ` ${addOnText(c.price)}` : ''}</span></label>`;
+          }).join('')}</div>
+        </fieldset>`;
+      }).join('')}
+      <label class="field"><span class="field__label">數量</span><input class="input" type="number" name="qty" min="1" max="99" value="${prevQty}"></label>`,
     actions: [{ label: '加入', value: 'add' }],
   });
-  if (value === 'add') posAdd(item.id, data.get('option'), Math.max(1, Number(data.get('qty')) || 1));
-});
+  if (value !== 'add') return;
+  const sel = normalizeSel(item, { sel: groups.flatMap((g) => data.getAll(`s_${g.id}`).concat(data.getAll(`m_${g.id}`))) });
+  const qty = Math.max(1, Number(data.get('qty')) || 1);
+  const problems = selProblems(item, sel);
+  if (problems.length) {
+    const p = problems[0];
+    const msg = p.reason === 'too-many' ? `「${p.group.name}」超過可選數量` : `請完成「${p.group.name}」的選擇`;
+    posChoose(item, sel, qty, msg);
+    return;
+  }
+  posAdd(item.id, sel, qty);
+}
 
 $('#pos-lines').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-pos-line]');

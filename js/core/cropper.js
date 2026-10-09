@@ -93,10 +93,10 @@ export async function cropImage(file, { aspect, mode = 'fit', title = '調整顯
         draw();
       };
 
+      // 框的高度一律由寬度與比例計算，不使用量到的高度(手機上視窗較矮時，量到的高度可能被壓縮)
       const setup = () => {
-        const r = stage.getBoundingClientRect();
-        W = r.width;
-        H = r.height;
+        W = stage.clientWidth;
+        H = W / aspect;
         const contain = Math.min(W / iw, H / ih);
         const cover = Math.max(W / iw, H / ih);
         minScale = mode === 'fit' ? contain : cover;
@@ -107,6 +107,22 @@ export async function cropImage(file, { aspect, mode = 'fit', title = '調整顯
         draw();
       };
       requestAnimationFrame(setup);
+      // 視窗寬度改變(例如出現捲軸、轉向)時，等比例調整目前的位置與縮放，維持同一個裁切範圍
+      const ro = new ResizeObserver(() => {
+        const w = stage.clientWidth;
+        if (!W || !w || Math.abs(w - W) < 0.5) return;
+        const k = w / W;
+        x *= k;
+        y *= k;
+        scale *= k;
+        minScale *= k;
+        maxScale *= k;
+        W = w;
+        H = W / aspect;
+        draw();
+      });
+      ro.observe(stage);
+      dlg.addEventListener('close', () => ro.disconnect(), { once: true });
 
       range.addEventListener('input', () => {
         zoomTo(minScale + (Number(range.value) / 1000) * (maxScale - minScale));

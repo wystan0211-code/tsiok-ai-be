@@ -77,12 +77,29 @@ export const DEMO_ITEMS = [
   },
   {
     id: 'demo-tea', name: '古早味紅茶', price: 20, description: '冰涼解渴。',
-    prepMinutes: 1, options: ['正常冰', '少冰'], stockLimit: null, soldCount: 0,
+    prepMinutes: 1, options: [], stockLimit: null, soldCount: 0,
     active: true, soldOut: false, sortOrder: 3, hasImage: false, imageVersion: 0,
     categoryId: 'demo-cat-drink', featured: false, tags: [],
+    // 選項群組示範：必填單選(冰度，含一個售完選項)、非必填複選(加料，有加價，最多 2 項)
+    optionGroups: [
+      { id: 'g-ice', name: '冰度', kind: 'required-single', min: 1, max: 1, choices: [
+        { id: 'c-reg', name: '正常冰', price: 0, soldOut: false },
+        { id: 'c-less', name: '少冰', price: 0, soldOut: false },
+        { id: 'c-none', name: '去冰', price: 0, soldOut: true },
+      ] },
+      { id: 'g-top', name: '加料', kind: 'optional-multi', min: 0, max: 2, choices: [
+        { id: 'c-pearl', name: '珍珠', price: 10, soldOut: false },
+        { id: 'c-jelly', name: '椰果', price: 10, soldOut: false },
+        { id: 'c-taro', name: '芋圓', price: 15, soldOut: false },
+      ] },
+    ],
     i18n: {
-      en: { name: 'Old-fashioned black tea', description: 'Ice-cold and refreshing.', options: ['Regular ice', 'Less ice'] },
-      ja: { name: '昔ながらの紅茶', description: '冷たくてすっきり。', options: ['氷普通', '氷少なめ'] },
+      en: { name: 'Old-fashioned black tea', description: 'Ice-cold and refreshing.', options: [],
+        groups: { 'g-ice': { name: 'Ice level', choices: { 'c-reg': 'Regular ice', 'c-less': 'Less ice', 'c-none': 'No ice' } },
+          'g-top': { name: 'Toppings', choices: { 'c-pearl': 'Tapioca pearls', 'c-jelly': 'Coconut jelly', 'c-taro': 'Taro balls' } } } },
+      ja: { name: '昔ながらの紅茶', description: '冷たくてすっきり。', options: [],
+        groups: { 'g-ice': { name: '氷の量', choices: { 'c-reg': '氷普通', 'c-less': '氷少なめ', 'c-none': '氷なし' } },
+          'g-top': { name: 'トッピング', choices: { 'c-pearl': 'タピオカ', 'c-jelly': 'ナタデココ', 'c-taro': 'タロイモ団子' } } } },
     },
   },
 ];

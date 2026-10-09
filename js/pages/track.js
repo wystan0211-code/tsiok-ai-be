@@ -1,4 +1,5 @@
 // 訂單進度頁：即時顯示狀態、預估時間、攤位訊息，並提供開啟推播、取消、找回訂單
+import { selText, normalizeSel } from '../core/options.js';
 import { api, IS_DEMO } from '../api/index.js';
 import {
   $, icon, toast, confirmDialog, openDialog, showDemoBanner, withBusy,
@@ -12,7 +13,7 @@ import {
   displayLines, displayTotal, estimateReadyAt, isFinal, isExpired, normalizePhone, isValidPhone,
 } from '../core/order-logic.js';
 import {
-  t, getLang, itemText, optionText, totalMoney, withOption,
+  t, getLang, itemText, totalMoney, withOption,
 } from '../core/i18n.js';
 import {
   beep, vibrate, unlockAudio, startAlarm, stopAlarm,
@@ -335,7 +336,8 @@ function renderOrder() {
 function localLineLabel(l) {
   const item = itemsById[l.itemId];
   const name = item ? itemText(item).name : l.name;
-  const opt = item ? optionText(item, l.option) : l.option;
+  // 選項依語言顯示(訂單內存的是選擇 sel 與中文文字)
+  const opt = item ? (selText(item, normalizeSel(item, l), getLang()) || l.option) : l.option;
   return withOption(name, opt);
 }
 
