@@ -19,10 +19,20 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - run: npm install --no-audit --no-fund firebase-tools@14 @firebase/rules-unit-testing@4 firebase@11
+      - run: npm install --no-audit --no-fund firebase-tools@14 @firebase/rules-unit-testing@4 firebase@11 playwright@1
+      - run: npx playwright install --with-deps chromium
+      # 正式網站的檔案(main 分支)
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: rules-test/site
+      - run: (cd site && python3 -m http.server 8000 >/dev/null 2>&1 &)
       - run: node prod-read.mjs | tee prod.txt
       - if: always()
         run: tr '\n' ' ' < prod.txt | sed 's/^/::notice title=prod::/' || true
+      - run: npx firebase emulators:exec --only firestore,auth --project demo-tsiok "node real-client.mjs" | tee real.txt
+      - if: always()
+        run: grep '^\[real\]' real.txt | tr '\n' ' ' | sed 's/^/::notice title=real::/' || true
       - run: npx firebase emulators:exec --only firestore --project demo-tsiok "node test.mjs" | tee out.txt
       # 把結果寫成注解，方便從 API 讀取
       - if: always()
