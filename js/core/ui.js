@@ -8,6 +8,55 @@ export const $$ = (selector, root = document) => Array.from(root.querySelectorAl
 // iPhone Safari 需要頁面上有 touchstart 監聽，按鈕的 :active 按下效果才會即時出現
 document.addEventListener('touchstart', () => {}, { passive: true });
 
+// 即時按下回饋：手指一碰到就加上 is-pressed(瀏覽器的 :active 在手機上常會晚一點才出現)
+// 按鈕立刻縮放；菜單卡片面積大、常是捲動的起點，等 60 毫秒且手指沒有移動才顯示，避免一滑就閃一下
+// 放開時至少維持 90 毫秒，快速點一下也看得到回饋
+const PRESS_TARGETS = '.btn, .press, .cat-chip, .radio-chip, .stepper button, .btn-add, .carousel__nav, .home__start, .mi, .fc';
+const PRESS_DELAYED = '.mi, .fc';
+const PRESS_MIN_MS = 90;
+const PRESS_SLOP = 8;
+let pressed = null; // { el, at, x, y, timer }
+
+function pressRelease() {
+  if (!pressed) return;
+  const { el, at, timer } = pressed;
+  clearTimeout(timer);
+  pressed = null;
+  if (!at) return; // 還沒顯示(延遲中)就取消
+  const left = PRESS_MIN_MS - (performance.now() - at);
+  if (left > 0) setTimeout(() => el.classList.remove('is-pressed'), left);
+  else el.classList.remove('is-pressed');
+}
+
+document.addEventListener('pointerdown', (e) => {
+  if (e.button > 0 || !e.isPrimary) return;
+  const el = e.target.closest?.(PRESS_TARGETS);
+  pressRelease();
+  if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return;
+  // 卡片上的加減控制區：卡片本身不縮放
+  if (el.matches(PRESS_DELAYED) && e.target.closest('.mi-ctrl')) return;
+  const show = () => {
+    if (!pressed || pressed.el !== el) return;
+    pressed.at = performance.now();
+    el.classList.add('is-pressed');
+  };
+  pressed = { el, at: 0, x: e.clientX, y: e.clientY, timer: 0 };
+  if (e.pointerType !== 'mouse' && el.matches(PRESS_DELAYED)) pressed.timer = setTimeout(show, 60);
+  else show();
+}, { passive: true, capture: true });
+
+document.addEventListener('pointermove', (e) => {
+  if (!pressed || !e.isPrimary) return;
+  if (Math.abs(e.clientX - pressed.x) > PRESS_SLOP || Math.abs(e.clientY - pressed.y) > PRESS_SLOP) pressRelease();
+}, { passive: true, capture: true });
+
+for (const type of ['pointerup', 'pointercancel', 'dragstart', 'contextmenu']) {
+  document.addEventListener(type, pressRelease, { passive: true, capture: true });
+}
+// 開始捲動、切到背景時取消
+document.addEventListener('scroll', pressRelease, { passive: true, capture: true });
+window.addEventListener('blur', pressRelease);
+
 // Material Symbols Rounded 圖標(新增圖標時記得同步更新 HTML 中的 icon_names 清單)
 export function icon(name, extraClass = '') {
   return `<span class="material-symbols-rounded icon ${extraClass}" aria-hidden="true">${name}</span>`;

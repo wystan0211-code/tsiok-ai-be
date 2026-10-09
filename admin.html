@@ -237,6 +237,16 @@
           <span class="material-symbols-rounded icon" aria-hidden="true">block</span>作廢所有未完成訂單</button></div>
       </div>
       <div class="card stack">
+        <h2 class="section-title">電話綁定查詢</h2>
+        <p class="muted text-sm">每支電話同時只能有一張進行中的預點。顧客送出時看到「這支電話已有進行中的訂單」，可以在這裡輸入電話，查看綁定的是哪一張訂單，必要時一鍵解除。</p>
+        <form id="phone-lock-form" class="phone-lock__form" novalidate>
+          <input class="input" name="phone" type="tel" inputmode="numeric" maxlength="12" placeholder="09xxxxxxxx" aria-label="電話號碼" autocomplete="off">
+          <button class="btn" type="submit">
+            <span class="material-symbols-rounded icon" aria-hidden="true">search</span>查詢</button>
+        </form>
+        <div id="phone-lock-result" class="phone-lock__result" hidden></div>
+      </div>
+      <div class="card stack">
         <h2 class="section-title">缺貨替代設定記憶</h2>
         <p class="muted text-sm">攤位處理缺貨時設定過的替代清單會被記住，下次相同品項缺貨時自動帶入。需要重新開始時可以全部清除。</p>
         <div><button id="clear-sub-memory" class="btn btn--danger" type="button">

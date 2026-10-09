@@ -28,6 +28,7 @@
 //   adminUpdateOrder(id, patch) / adminDeleteOrder(id) / adminCreateManual(data)
 //   listAccounts() / createAccount(data) / updateAccount(uid, patch) / deleteAccount(uid)
 //   resetCounters() / resetDemo()(僅展示模式)
+//   getPhoneLock(phone) / releasePhoneLock(phone)  電話綁定查詢與解除
 
 import { IS_DEMO } from '../config.js';
 

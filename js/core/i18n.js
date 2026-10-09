@@ -212,6 +212,8 @@ const DICT = {
   // 錯誤訊息(顧客可能看到的)
   'err.closed': ['攤位目前暫停接受預點，請直接到攤位點餐。', 'Pre-orders are paused. Please order at the stall.', 'ただいま事前注文を停止しています。屋台で直接ご注文ください。'],
   'err.over-limit': ['單筆預點數量超過上限，請直接到攤位點餐。', 'This order exceeds the item limit. Please order at the stall.', '注文数が上限を超えています。屋台で直接ご注文ください。'],
+  'err.submit-denied': ['訂單資料沒有通過系統檢查，無法送出。請把下方代碼告訴攤位人員，或直接到攤位點餐。', 'Your order did not pass the system check and could not be sent. Please show the code below to the stall staff, or order at the stall.', '注文内容がシステムの確認を通過できず、送信できませんでした。下のコードを屋台のスタッフにお見せいただくか、屋台で直接ご注文ください。'],
+  'err.code': ['錯誤代碼：{code}', 'Error code: {code}', 'エラーコード：{code}'],
   'err.phone-active': ['這支電話已有進行中的訂單，取餐完成後才能再預點。', 'This phone number already has an active order. You can order again after picking it up.', 'この電話番号には受け取り前の注文があります。受け取り後に再度ご注文いただけます。'],
   'err.session-invalid': ['點餐連結已失效，請重新掃描攤位的 QR code。', 'This ordering link has expired. Please scan the QR code at the stall again.', 'この注文リンクは無効になりました。屋台のQRコードをもう一度読み取ってください。'],
   'err.active-order': ['你有一筆進行中的訂單，完成後才能再預點。', 'You have an active order. You can order again once it\'s complete.', '進行中の注文があります。完了後に再度ご注文いただけます。'],

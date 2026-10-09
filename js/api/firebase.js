@@ -107,6 +107,75 @@ async function readItems(tx, lines) {
 }
 
 
+// 送出預點被安全規則拒絕時的自我檢查(對照 firestore.rules 的 preorderChecks 等條件)
+// 回傳代碼清單，全部通過時為 ['OK']；讀取失敗時加上 RD
+//   AU 登入身分異常        ST-0 營業設定不存在  ST-A 未開放預點或欄位不是布林值  ST-M 數量上限欄位不是數字  ST-L 超過資料庫中的數量上限
+//   SE-0 點餐連結不存在     SE-K 連結文件有多餘欄位  SE-T 連結代碼長度不符  SE-U 連結已使用  SE-O 連結已綁定訂單
+//   CT-K 計數器有多餘欄位   CT-V 計數器數值不是整數
+//   LN-N 明細行數不是 1～10  LN-K 明細有多餘欄位  LN-I 品項 ID 長度不符  LN-Q 數量不是 1～50 的整數  LN-O 選項文字超過 200 字  LN-S 選擇超過 50 個
+//   NM 姓氏長度不是 1～10   TT 稱謂不符  LG 語言不符  PH 電話格式不符  CS 同意文字不是文字或超過 500 字  SP 缺貨偏好不符
+//   LK 這組編號與電話的查詢紀錄已存在(僅供參考)
+async function diagnoseSubmit({ uid, lines, surname, title, phone, consentText, lang, subPref, count }) {
+  const codes = [];
+  const len = (v) => [...String(v)].length;
+  const isInt = (v) => typeof v === 'number' && Number.isInteger(v);
+  try {
+    if (!auth.currentUser || auth.currentUser.uid !== uid) codes.push('AU');
+    const [setSnap, sesSnap, cntSnap] = await Promise.all([
+      getDoc(ref('settings', 'app')), getDoc(ref('sessions', uid)), getDoc(ref('counters', 'A')),
+    ]);
+    const st = setSnap.exists() ? setSnap.data() : null;
+    if (!st) codes.push('ST-0');
+    else {
+      if (st.acceptingPreorders !== true) codes.push('ST-A');
+      if (typeof st.maxItemsPerOrder !== 'number') codes.push('ST-M');
+      else if (count > st.maxItemsPerOrder) codes.push('ST-L');
+    }
+    const se = sesSnap.exists() ? sesSnap.data() : null;
+    if (!se) codes.push('SE-0');
+    else {
+      if (Object.keys(se).some((k) => !['token', 'used', 'orderId', 'updatedAt'].includes(k))) codes.push('SE-K');
+      if (typeof se.token !== 'string' || se.token.length < 16 || se.token.length > 64) codes.push('SE-T');
+      if (se.used !== false) codes.push('SE-U');
+      if (se.orderId != null) codes.push('SE-O');
+    }
+    const ct = cntSnap.exists() ? cntSnap.data() : null;
+    if (ct) {
+      if (Object.keys(ct).some((k) => !['value', 'lastOrderId'].includes(k))) codes.push('CT-K');
+      if (!isInt(ct.value)) codes.push('CT-V');
+    }
+    const itemsById = {};
+    const ids = [...new Set(lines.map((l) => l.itemId))];
+    const snaps = await Promise.all(ids.map((id) => getDoc(ref('items', id))));
+    for (const sn of snaps) if (sn.exists()) itemsById[sn.id] = { id: sn.id, ...sn.data() };
+    const items = cleanLines(lines, itemsById);
+    if (items.length < 1 || items.length > 10) codes.push('LN-N');
+    const add = (c) => { if (!codes.includes(c)) codes.push(c); };
+    for (const l of items) {
+      if (Object.keys(l).some((k) => !['itemId', 'qty', 'option', 'sel'].includes(k))) add('LN-K');
+      if (typeof l.itemId !== 'string' || !l.itemId.length || l.itemId.length > 64) add('LN-I');
+      if (!isInt(l.qty) || l.qty < 1 || l.qty > 50) add('LN-Q');
+      if (l.option != null && (typeof l.option !== 'string' || len(l.option) > 200)) add('LN-O');
+      if (l.sel != null && (!Array.isArray(l.sel) || l.sel.length > 50)) add('LN-S');
+    }
+    if (typeof surname !== 'string' || len(surname) < 1 || len(surname) > 10) codes.push('NM');
+    if (!['先生', '小姐', '其他'].includes(title)) codes.push('TT');
+    if (!['zh-Hant', 'en', 'ja'].includes(lang)) codes.push('LG');
+    if (!/^09[0-9]{8}$/.test(phone)) codes.push('PH');
+    if (typeof consentText !== 'string' || len(consentText) > 500) codes.push('CS');
+    if (!SUB_PREFS.includes(subPref)) codes.push('SP');
+    if (ct && isInt(ct.value)) {
+      const lk = await getDoc(ref('lookups', `${formatNo('preorder', ct.value + 1)}_${phone}`));
+      if (lk.exists()) codes.push('LK');
+    }
+  } catch (err) {
+    console.warn('送出檢查失敗', err);
+    codes.push('RD');
+  }
+  // LK 只是參考資訊，不影響判斷
+  return codes.filter((c) => c !== 'LK').length ? codes : ['OK', ...codes];
+}
+
 // 解除電話綁定：訂單結束(取餐、拒絕、取消、作廢)後刪除該電話的綁定，失敗時不影響主要動作
 async function releasePhone(orderId) {
   try {
@@ -314,11 +383,14 @@ export const api = {
       });
     } catch (err) {
       if (err instanceof ApiError) throw err;
-      // 安全規則拒絕時，最常見的原因是這支電話已有進行中的訂單
       if (err?.code === 'permission-denied') {
         const s = snapData(await getDoc(sessionRef));
         if (!s || s.used) throw new ApiError('session-invalid');
-        throw new ApiError('phone-active');
+        // 安全規則拒絕：顧客端讀得到的條件逐項自我檢查，結果以代碼顯示在錯誤訊息下方
+        // 檢查都通過(OK)時，最可能的原因是這支電話已有進行中的訂單；有任何一項不通過，就不是電話的問題
+        const codes = await diagnoseSubmit({ uid, lines, surname, title, phone, consentText, lang, subPref, count });
+        const ok = codes.length === 1 && codes[0] === 'OK';
+        throw new ApiError(ok ? 'phone-active' : 'submit-denied', null, { diag: ['PD', ...codes].join(' ') });
       }
       throw err;
     }
@@ -551,6 +623,19 @@ export const api = {
   saveSubMemory: (key, candidates) => guard(async () => {
     await setDoc(ref('subMemory', key), { candidates, updatedAt: serverTimestamp() });
   }),
+  // 電話綁定查詢(後台)：回傳 { lock: { orderId, uid, updatedAt } | null, order: 訂單 | null }
+  getPhoneLock: (phone) => guard(async () => {
+    const lock = snapData(await getDoc(ref('activePhones', phone)));
+    if (!lock) return { lock: null, order: null };
+    const order = lock.orderId ? snapData(await getDoc(ref('orders', lock.orderId))) : null;
+    return { lock, order };
+  }),
+
+  // 一鍵解除電話綁定(管理員可解除進行中的；店員、主管只能解除已結束訂單的)
+  releasePhoneLock: (phone) => guard(async () => {
+    await deleteDoc(ref('activePhones', phone));
+  }),
+
   clearSubMemory: () => guard(async () => {
     const snap = await getDocs(collection(db, 'subMemory'));
     for (let i = 0; i < snap.docs.length; i += 400) {

@@ -9,7 +9,9 @@ import {
   escapeHtml, money, dateTime, toDateInput, fromDateInput, personName,
   STATUS_LABEL, TYPE_LABEL, ROLE_LABEL,
 } from '../core/format.js';
-import { displayLines, isPaid, lineLabel, summarizeLines } from '../core/order-logic.js';
+import {
+  displayLines, isPaid, lineLabel, summarizeLines, isFinal, isExpired, normalizePhone, isValidPhone,
+} from '../core/order-logic.js';
 import { compressImage } from '../core/image.js';
 import { cropItemImage, cropBannerImage } from '../core/cropper.js';
 import { itemImageRefs, MAX_ITEM_IMAGES, MAX_BANNERS } from '../core/images.js';
@@ -1079,6 +1081,71 @@ $('#clear-sub-memory').addEventListener('click', async (e) => {
     try {
       const n = await api.clearSubMemory();
       toast(`已清除 ${n} 筆替代設定`, 'success');
+    } catch (err) {
+      toast(errorText(err), 'danger');
+    }
+  });
+});
+
+// 電話綁定查詢：輸入電話，顯示綁定的訂單(編號與狀態)，可一鍵解除
+let lockPhone = '';
+async function showPhoneLock(phone) {
+  const box = $('#phone-lock-result');
+  const { lock, order } = await api.getPhoneLock(phone);
+  lockPhone = phone;
+  box.hidden = false;
+  if (!lock) {
+    box.innerHTML = `<p>${icon('check_circle', 'icon--sm')} ${escapeHtml(phone)} 目前沒有綁定任何訂單，可以直接預點。</p>`;
+    return;
+  }
+  let status = '訂單已不存在';
+  if (order) {
+    if (order.voided) status = '已作廢';
+    else if (order.deleted) status = '已刪除';
+    else if (isExpired(order)) status = `${STATUS_LABEL[order.status] || order.status}(已超過 12 小時，視為失效)`;
+    else status = STATUS_LABEL[order.status] || order.status;
+  }
+  const done = isFinal(order);
+  box.innerHTML = `
+    <dl>
+      <dt>電話</dt><dd>${escapeHtml(phone)}</dd>
+      <dt>綁定訂單</dt><dd>${order ? `<strong>${escapeHtml(order.no || '')}</strong>` : '—'}</dd>
+      <dt>訂單狀態</dt><dd>${escapeHtml(status)}</dd>
+      ${order?.createdAt ? `<dt>建立時間</dt><dd>${escapeHtml(dateTime(order.createdAt))}</dd>` : ''}
+      <dt>綁定時間</dt><dd>${lock.updatedAt ? escapeHtml(dateTime(lock.updatedAt)) : '—'}</dd>
+    </dl>
+    <p class="muted text-xs">${done
+    ? '這張訂單已結束，綁定不會擋住新的預點；也可以直接解除。'
+    : '這張訂單還在進行中，解除後顧客就能用這支電話再預點一張。'}</p>
+    <div><button id="phone-lock-release" class="btn btn--danger" type="button">${icon('link_off')}解除綁定</button></div>`;
+}
+
+$('#phone-lock-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const btn = e.currentTarget.querySelector('button[type=submit]');
+  const phone = normalizePhone(e.currentTarget.phone.value);
+  if (!isValidPhone(phone)) {
+    toast('請輸入 09 開頭的 10 碼手機號碼', 'danger');
+    return;
+  }
+  withBusy(btn, async () => {
+    try {
+      await showPhoneLock(phone);
+    } catch (err) {
+      toast(errorText(err), 'danger');
+    }
+  });
+});
+
+$('#phone-lock-result').addEventListener('click', async (e) => {
+  const btn = e.target.closest('#phone-lock-release');
+  if (!btn || !lockPhone) return;
+  if (!await confirmDialog('解除電話綁定', `確定要解除 ${lockPhone} 的綁定嗎？訂單本身不會被取消。`, { confirmLabel: '解除', danger: true })) return;
+  withBusy(btn, async () => {
+    try {
+      await api.releasePhoneLock(lockPhone);
+      toast('已解除綁定', 'success');
+      await showPhoneLock(lockPhone);
     } catch (err) {
       toast(errorText(err), 'danger');
     }

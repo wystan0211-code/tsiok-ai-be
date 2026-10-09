@@ -518,6 +518,19 @@ export const api = {
     commit();
   },
 
+  async getPhoneLock(phone) {
+    await delay();
+    const lock = db.activePhones[phone] || null;
+    if (!lock) return { lock: null, order: null };
+    return { lock, order: db.orders[lock.orderId] || null };
+  },
+
+  async releasePhoneLock(phone) {
+    await delay();
+    delete db.activePhones[phone];
+    commit();
+  },
+
   async clearSubMemory() {
     requireRole(ADMIN);
     const n = Object.keys(db.subMemory || {}).length;

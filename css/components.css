@@ -99,7 +99,8 @@ body:has(> .topbar--fixed) {
 }
 
 .btn--primary:hover,
-.btn--primary:active {
+.btn--primary:active,
+.btn--primary.is-pressed {
   background: var(--color-primary-hover);
 }
 
@@ -124,7 +125,8 @@ body:has(> .topbar--fixed) {
 }
 
 .btn--danger-solid:hover,
-.btn--danger-solid:active {
+.btn--danger-solid:active,
+.btn--danger-solid.is-pressed {
   background: #8f1e18;
   border-color: #8f1e18;
 }
@@ -154,7 +156,8 @@ button,
   user-select: none;
 }
 
-/* 一般按鈕與選項的按下回饋：縮放加淡黃底(放開後回彈) */
+/* 一般按鈕與選項的按下回饋：縮放加淡黃底(放開後回彈)
+   is-pressed 由 js/core/ui.js 在手指一碰到就加上，比瀏覽器的 :active 更即時 */
 .btn,
 .cat-chip,
 .radio-chip span,
@@ -163,16 +166,23 @@ button,
 }
 
 .btn:active:not(:disabled),
+.btn.is-pressed:not(:disabled),
 .radio-chip:active span,
-.stepper button:active {
+.radio-chip.is-pressed span,
+.stepper button:active,
+.stepper button.is-pressed {
   transform: scale(0.94);
-  transition-duration: 70ms;
+  transition-duration: 40ms;
 }
 
 .btn:not(.btn--primary):not(.btn--danger-solid):active:not(:disabled),
+.btn:not(.btn--primary):not(.btn--danger-solid).is-pressed:not(:disabled),
 .cat-chip:not(.is-active):active,
+.cat-chip:not(.is-active).is-pressed,
 .radio-chip input:not(:checked) + span:active,
-.stepper button:active {
+.radio-chip.is-pressed input:not(:checked) + span,
+.stepper button:active,
+.stepper button.is-pressed {
   background: var(--color-primary-soft);
 }
 
@@ -183,9 +193,10 @@ button,
   touch-action: manipulation;
 }
 
-.press:active:not(:disabled) {
+.press:active:not(:disabled),
+.press.is-pressed:not(:disabled) {
   transform: scale(0.86);
-  transition-duration: 70ms;
+  transition-duration: 40ms;
 }
 
 .btn--ghost {
@@ -723,7 +734,8 @@ button,
   padding: 0;
 }
 
-.btn-add:active:not(:disabled) {
+.btn-add:active:not(:disabled),
+.btn-add.is-pressed:not(:disabled) {
   background: var(--color-primary-hover);
 }
 
@@ -1362,7 +1374,8 @@ html.is-page-wait body {
   cursor: pointer;
 }
 
-.home__start:active {
+.home__start:active,
+.home__start.is-pressed {
   background: var(--color-primary-hover);
 }
 
@@ -1910,9 +1923,10 @@ html[lang='en'] .radio-chip span {
   transition: opacity 0.15s ease, transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.carousel__nav:active {
+.carousel__nav:active,
+.carousel__nav.is-pressed {
   transform: scale(0.9);
-  transition-duration: 70ms;
+  transition-duration: 40ms;
 }
 
 .carousel__nav .icon {
@@ -2064,10 +2078,11 @@ html[lang='en'] .radio-chip span {
 }
 
 /* 按下卡片：淡黃底並輕微縮小 */
-.mi:active:not(:has(.mi-ctrl:active)) {
+.mi:active:not(:has(.mi-ctrl:active)),
+.mi.is-pressed {
   background: var(--color-primary-soft);
   transform: scale(0.98);
-  transition-duration: 70ms;
+  transition-duration: 40ms;
 }
 
 .mi__text {
@@ -2167,7 +2182,8 @@ html[lang='en'] .radio-chip span {
 }
 
 /* 「+」按下的縮放幅度較小 */
-.mi-ctrl .press:active:not(:disabled) {
+.mi-ctrl .press:active:not(:disabled),
+.mi-ctrl .press.is-pressed:not(:disabled) {
   transform: scale(0.93);
 }
 
@@ -2253,10 +2269,11 @@ html[lang='en'] .radio-chip span {
   transition: transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.15s ease;
 }
 
-.fc:active:not(:has(.mi-ctrl:active)) {
+.fc:active:not(:has(.mi-ctrl:active)),
+.fc.is-pressed {
   background: var(--color-primary-soft);
   transform: scale(0.97);
-  transition-duration: 70ms;
+  transition-duration: 40ms;
 }
 
 .fc__name {
@@ -2663,13 +2680,15 @@ body.is-viewer-open {
   font-size: var(--text-sm);
 }
 
+/* 「必填」標籤：淺灰底、灰字，約原本的 2/3 大小；未填時變成紅底白字 */
 .og__req {
   flex-shrink: 0;
-  padding: 2px 10px;
-  border-radius: 6px;
+  padding: 1px 7px;
+  border-radius: 4px;
   background: var(--color-divider);
-  color: var(--color-text);
-  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  font-size: 10px;
+  line-height: 1.5;
   font-weight: var(--weight-semibold);
   transition: background-color 0.2s ease, color 0.2s ease;
 }
@@ -2783,7 +2802,7 @@ body.is-viewer-open {
 
 /* ===== 確認訂單：數量、總金額、付款說明的間距 ===== */
 .checkout-sum > .checkout-sum__total {
-  margin-top: var(--space-2);
+  margin-top: 2px;
 }
 
 .checkout-sum > .checkout-sum__note {
@@ -3138,4 +3157,56 @@ body.is-viewer-open {
   padding: 0;
   border: none;
   min-width: 0;
+}
+
+/* 送出失敗時的技術代碼：小灰字，放在錯誤訊息下方 */
+.banner.has-code {
+  flex-direction: column;
+  gap: 0;
+}
+
+.form-error__code {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: var(--weight-regular);
+  word-break: break-all;
+}
+
+/* 後台：電話綁定查詢 */
+.phone-lock__form {
+  display: flex;
+  gap: var(--space-2);
+  max-width: 420px;
+}
+
+.phone-lock__form .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.phone-lock__result {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  font-size: var(--text-sm);
+}
+
+.phone-lock__result dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px var(--space-3);
+  margin: 0;
+}
+
+.phone-lock__result dt {
+  color: var(--color-text-muted);
+}
+
+.phone-lock__result dd {
+  margin: 0;
 }

@@ -5,6 +5,7 @@ export const ERROR_MESSAGES = {
   closed: '攤位目前暫停接受預點，請直接到攤位點餐。',
   'over-limit': '單筆預點數量超過上限，請直接到攤位點餐。',
   'phone-active': '這支電話已有進行中的訂單，取餐完成後才能再預點。',
+  'submit-denied': '訂單資料沒有通過系統檢查，無法送出。請把下方代碼告訴攤位人員，或直接到攤位點餐。',
   'session-invalid': '點餐連結已失效，請重新掃描攤位的 QR code。',
   'active-order': '你有一筆進行中的訂單，完成後才能再預點。',
   'sold-out': '部分品項已售完或數量不足。',

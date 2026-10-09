@@ -13,7 +13,7 @@ import {
 } from '../core/order-logic.js';
 import { goTo, pageReady, briefWait } from '../core/transition.js';
 import {
-  t, getLang, itemCount, totalMoney, itemText, settingText, withOption,
+  t, getLang, itemCount, itemText, settingText, withOption,
   categoryText, tagsText,
 } from '../core/i18n.js';
 import { itemImageRefs } from '../core/images.js';
@@ -316,9 +316,15 @@ function coverHtml(item, cls) {
     : `<div class="${cls} ${cls}--empty">${icon('restaurant')}</div>`;
 }
 
-// 菜單與詳細頁的價格只顯示「$ 30」(不顯示 NT，所有語言相同)；購物車、確認訂單仍用 money()
+// 菜單、詳細頁與確認訂單的單價只顯示「$ 30」(不顯示 NT，所有語言相同)；購物車列仍用 money()
 function menuMoney(n) {
   return `$ ${Number(n || 0).toLocaleString('zh-TW')}`;
+}
+
+// 確認訂單頁的總金額：中文「$ 120」，英日文「NTD$ 120」(每一品項只顯示單價「$ 20」)
+function checkoutTotal(n) {
+  const num = Number(n || 0).toLocaleString('zh-TW');
+  return getLang() === 'zh-Hant' ? `$ ${num}` : `NTD$ ${num}`;
 }
 
 // 加入購物車的控制項：先顯示 +，加入後變成「− 數量 +」
@@ -772,7 +778,7 @@ function renderCheckout() {
     return `<div class="cart-line">
       <div class="cart-line__name">
         <div>${escapeHtml(name)}${optText ? `<span class="muted">${escapeHtml(optText)}</span>` : ''}</div>
-        <div class="muted text-xs">${money(unit)} × ${l.qty} = ${money(unit * l.qty)}</div>
+        <div class="muted text-xs">${menuMoney(unit)}</div>
       </div>
       <div class="stepper">
         <button type="button" class="press" data-action="line-minus" data-index="${i}" aria-label="${t('order.decreaseShort')}">${icon(l.qty === 1 ? 'delete' : 'remove', 'icon--sm')}</button>
@@ -782,8 +788,8 @@ function renderCheckout() {
     </div>`;
   }).join('');
   $('#cart-count').textContent = itemCount(count);
-  // 總金額：英日文前面標示 NTD
-  $('#cart-total').textContent = totalMoney(priced.total);
+  // 總金額：中文「$ 120」，英日文「NTD$ 120」
+  $('#cart-total').textContent = checkoutTotal(priced.total);
   // 超過數量上限：顯示上限數字，「繼續」微退色，按下時不會進入第二頁
   const over = count > max;
   const warn = $('#limit-warning');
@@ -839,10 +845,18 @@ form.addEventListener('input', () => {
   store.set(FORM_KEY, { surname: form.surname.value, title: form.elements.title.value, phone: form.phone.value });
 });
 
-function formError(message) {
+// 錯誤訊息；code 為技術代碼(送出被系統拒絕時)，以小灰字顯示在訊息下方，方便回報問題
+function formError(message, code = '') {
   const el = $('#form-error');
   el.hidden = !message;
   el.textContent = message || '';
+  el.classList.toggle('has-code', Boolean(message && code));
+  if (message && code) {
+    const small = document.createElement('small');
+    small.className = 'form-error__code';
+    small.textContent = t('err.code', { code });
+    el.append(small);
+  }
 }
 
 form.addEventListener('submit', (e) => {
@@ -902,7 +916,7 @@ async function submit() {
     store.set(CART_KEY, cart);
     goTo(`track.html?o=${encodeURIComponent(orderId)}&new=1`, { replace: true });
   } catch (err) {
-    formError(errorText(err));
+    formError(errorText(err), err?.diag || '');
   }
   return undefined;
 }
