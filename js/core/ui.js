@@ -8,21 +8,19 @@ export const $$ = (selector, root = document) => Array.from(root.querySelectorAl
 // iPhone Safari 需要頁面上有 touchstart 監聽，按鈕的 :active 按下效果才會即時出現
 document.addEventListener('touchstart', () => {}, { passive: true });
 
-// 即時按下回饋：手指一碰到就加上 is-pressed(瀏覽器的 :active 在手機上常會晚一點才出現)
-// 按鈕立刻縮放；菜單卡片面積大、常是捲動的起點，等 60 毫秒且手指沒有移動才顯示，避免一滑就閃一下
-// 放開時至少維持 90 毫秒，快速點一下也看得到回饋
-const PRESS_TARGETS = '.btn, .press, .cat-chip, .radio-chip, .stepper button, .btn-add, .carousel__nav, .home__start, .mi, .fc';
-const PRESS_DELAYED = '.mi, .fc';
+// 即時按下回饋：只套用在 3.13.1 原本就有按下回饋的按鈕，手指一碰到就加上 is-pressed
+// (瀏覽器的 :active 在手機上常會晚一點才出現)；放開時至少維持 90 毫秒，快速點一下也看得到回饋
+// 顧客端的商品卡、數量加減(.mi-ctrl 與 .stepper 裡的 .press)不使用回饋
+const PRESS_TARGETS = '.btn, .press, .cat-chip, .radio-chip, .stepper button, .carousel__nav, .home__start';
+const PRESS_EXCLUDE = '.mi-ctrl .press, .stepper .press';
 const PRESS_MIN_MS = 90;
 const PRESS_SLOP = 8;
-let pressed = null; // { el, at, x, y, timer }
+let pressed = null; // { el, at, x, y }
 
 function pressRelease() {
   if (!pressed) return;
-  const { el, at, timer } = pressed;
-  clearTimeout(timer);
+  const { el, at } = pressed;
   pressed = null;
-  if (!at) return; // 還沒顯示(延遲中)就取消
   const left = PRESS_MIN_MS - (performance.now() - at);
   if (left > 0) setTimeout(() => el.classList.remove('is-pressed'), left);
   else el.classList.remove('is-pressed');
@@ -32,17 +30,9 @@ document.addEventListener('pointerdown', (e) => {
   if (e.button > 0 || !e.isPrimary) return;
   const el = e.target.closest?.(PRESS_TARGETS);
   pressRelease();
-  if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return;
-  // 卡片上的加減控制區：卡片本身不縮放
-  if (el.matches(PRESS_DELAYED) && e.target.closest('.mi-ctrl')) return;
-  const show = () => {
-    if (!pressed || pressed.el !== el) return;
-    pressed.at = performance.now();
-    el.classList.add('is-pressed');
-  };
-  pressed = { el, at: 0, x: e.clientX, y: e.clientY, timer: 0 };
-  if (e.pointerType !== 'mouse' && el.matches(PRESS_DELAYED)) pressed.timer = setTimeout(show, 60);
-  else show();
+  if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true' || el.matches(PRESS_EXCLUDE)) return;
+  pressed = { el, at: performance.now(), x: e.clientX, y: e.clientY };
+  el.classList.add('is-pressed');
 }, { passive: true, capture: true });
 
 document.addEventListener('pointermove', (e) => {

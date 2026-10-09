@@ -199,6 +199,17 @@ button,
   transition-duration: 40ms;
 }
 
+/* 顧客端的商品卡、數量加減(菜單卡片的 + 與 − 數量 +、詳細頁與確認訂單的數量)：不使用按下回饋
+   這些按鈕都有 .press，攤位現場點餐的數量按鈕沒有 .press，維持原本的回饋 */
+.stepper .press:active:not(:disabled),
+.mi-ctrl .press:active:not(:disabled) {
+  transform: none;
+}
+
+.stepper .press:active {
+  background: transparent;
+}
+
 .btn--ghost {
   border-color: transparent;
   background: transparent;
@@ -732,11 +743,6 @@ button,
   justify-content: center;
   cursor: pointer;
   padding: 0;
-}
-
-.btn-add:active:not(:disabled),
-.btn-add.is-pressed:not(:disabled) {
-  background: var(--color-primary-hover);
 }
 
 .menu-item--soldout {
@@ -2077,14 +2083,6 @@ html[lang='en'] .radio-chip span {
   transition: transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.15s ease;
 }
 
-/* 按下卡片：淡黃底並輕微縮小 */
-.mi:active:not(:has(.mi-ctrl:active)),
-.mi.is-pressed {
-  background: var(--color-primary-soft);
-  transform: scale(0.98);
-  transition-duration: 40ms;
-}
-
 .mi__text {
   min-width: 0;
   display: flex;
@@ -2181,12 +2179,6 @@ html[lang='en'] .radio-chip span {
   flex-shrink: 0;
 }
 
-/* 「+」按下的縮放幅度較小 */
-.mi-ctrl .press:active:not(:disabled),
-.mi-ctrl .press.is-pressed:not(:disabled) {
-  transform: scale(0.93);
-}
-
 .mi-ctrl__count {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
@@ -2267,13 +2259,6 @@ html[lang='en'] .radio-chip span {
   -webkit-user-select: none;
   user-select: none;
   transition: transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.15s ease;
-}
-
-.fc:active:not(:has(.mi-ctrl:active)),
-.fc.is-pressed {
-  background: var(--color-primary-soft);
-  transform: scale(0.97);
-  transition-duration: 40ms;
 }
 
 .fc__name {
