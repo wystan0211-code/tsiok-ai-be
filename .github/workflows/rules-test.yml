@@ -20,6 +20,9 @@ jobs:
           distribution: temurin
           java-version: 21
       - run: npm install --no-audit --no-fund firebase-tools@14 @firebase/rules-unit-testing@4 firebase@11
+      - run: node prod-read.mjs | tee prod.txt
+      - if: always()
+        run: tr '\n' ' ' < prod.txt | sed 's/^/::notice title=prod::/' || true
       - run: npx firebase emulators:exec --only firestore --project demo-tsiok "node test.mjs" | tee out.txt
       # 把結果寫成注解，方便從 API 讀取
       - if: always()
