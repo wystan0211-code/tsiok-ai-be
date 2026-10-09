@@ -846,6 +846,14 @@ button,
   border-color: var(--color-primary-deep);
 }
 
+/* 攤位取消訂單：同樣合併成一條長條，改為紅色 */
+.step--cancelled .step__bar {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  transform-origin: left center;
+  animation: step-merge 0.6s ease-out;
+}
+
 /* 已取餐：四條由左而右合併成一條綠色長條 */
 .steps--complete {
   grid-template-columns: 1fr;
@@ -2967,4 +2975,167 @@ body.is-viewer-open {
   .og-editor__preview-toggle {
     display: none;
   }
+}
+
+/* ===== 確認訂單(兩頁)：底部按鈕固定在畫面最下方，預留空間避免遮到內容 ===== */
+.checkout-page {
+  padding-bottom: 96px;
+}
+
+/* 超過數量上限：按鈕微退色(仍可按下，按下時顯示提醒) */
+.btn.is-faded {
+  opacity: 0.5;
+}
+
+/* ===== 確認訂單第二頁：「如果特定商品已售完」 ===== */
+.sub-box__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.sub-box__head .section-title {
+  margin: 0;
+}
+
+.sub-box.is-error .sub-box__req {
+  background: var(--color-danger);
+  color: #ffffff;
+}
+
+.sub-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 56px;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-divider);
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.sub-row:last-child {
+  border-bottom: none;
+}
+
+.sub-row__icon {
+  flex-shrink: 0;
+}
+
+.sub-row__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sub-row__hint {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* ===== 訂單進度頁：替代品詢問 ===== */
+.short-ask {
+  border: 2px solid var(--color-primary);
+}
+
+.short-ask__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.short-ask__timer {
+  flex-shrink: 0;
+  color: var(--color-danger);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.short-ask__item {
+  font-weight: var(--weight-semibold);
+}
+
+.total-changed {
+  margin-left: var(--space-2);
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: var(--color-primary-soft);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+
+/* ===== 攤位：缺貨處理 ===== */
+.order-card__pick {
+  flex-basis: 100%;
+}
+
+.short-wait {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.short-lines {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.short-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.short-line__qty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.short-line__qty .input {
+  width: 72px;
+}
+
+.cand-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.cand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius);
+}
+
+.cand.is-incomplete {
+  border-color: var(--color-danger);
+}
+
+.cand__label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.short-ask__set {
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
 }

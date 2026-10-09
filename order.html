@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,add_photo_alternate,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,chevron_left,chevron_right,close,content_copy,delete,done_all,download,edit,error,expand_more,fullscreen,group,image,inbox,info,language,link_off,login,logout,near_me,notifications,notifications_active,notifications_off,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,upload,view_kanban,visibility,volume_up,warning,zoom_in,zoom_out&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,add_photo_alternate,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,check_circle,chevron_left,chevron_right,close,content_copy,delete,done_all,download,edit,error,expand_more,fullscreen,group,image,inbox,info,inventory_2,language,link_off,login,logout,near_me,notifications,notifications_active,notifications_off,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,swap_horiz,sync,timer,tune,tv,undo,upload,view_kanban,visibility,volume_up,warning,zoom_in,zoom_out&display=block">
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/components.css">
@@ -114,7 +114,8 @@
       </div>
     </section>
 
-    <section id="view-checkout" class="stack" hidden>
+    <!-- 確認訂單第一頁：明細與金額 -->
+    <section id="view-checkout" class="stack checkout-page" hidden>
       <div class="card">
         <h2 class="section-title" data-i18n="order.checkoutTitle">確認訂單</h2>
         <div id="cart-lines"></div>
@@ -126,6 +127,36 @@
           <div id="limit-warning" class="banner banner--danger" hidden></div>
         </div>
       </div>
+    </section>
+
+    <!-- 確認訂單第二頁：缺貨偏好、取餐聯絡資料 -->
+    <section id="view-info" class="stack checkout-page" hidden>
+      <section id="sub-box" class="card sub-box" aria-labelledby="sub-title">
+        <div class="sub-box__head">
+          <h2 id="sub-title" class="section-title" data-i18n="sub.title">如果特定商品已售完</h2>
+          <span class="og__req sub-box__req" data-i18n="detail.required">必填</span>
+        </div>
+        <div class="sub-box__rows" role="radiogroup" aria-labelledby="sub-title">
+          <label class="sub-row">
+            <span class="material-symbols-rounded icon sub-row__icon" aria-hidden="true">check_circle</span>
+            <span class="sub-row__text"><span data-i18n="sub.choose">立即選擇替代商品</span><span class="sub-row__hint" data-i18n="sub.chooseHint">從替代清單中選擇</span></span>
+            <input class="og__input" type="radio" name="subPref" value="choose">
+            <span class="og__mark og__mark--radio" aria-hidden="true"></span>
+          </label>
+          <label class="sub-row">
+            <span class="material-symbols-rounded icon sub-row__icon" aria-hidden="true">sync</span>
+            <span class="sub-row__text"><span data-i18n="sub.similar">更換為任何類似商品</span><span class="sub-row__hint" data-i18n="sub.similarHint">攤位會挑選其他口味或其他品項</span></span>
+            <input class="og__input" type="radio" name="subPref" value="similar">
+            <span class="og__mark og__mark--radio" aria-hidden="true"></span>
+          </label>
+          <label class="sub-row">
+            <span class="material-symbols-rounded icon sub-row__icon" aria-hidden="true">close</span>
+            <span class="sub-row__text"><span data-i18n="sub.remove">刪除該品項</span></span>
+            <input class="og__input" type="radio" name="subPref" value="remove">
+            <span class="og__mark og__mark--radio" aria-hidden="true"></span>
+          </label>
+        </div>
+      </section>
 
       <form id="checkout-form" class="card stack" novalidate>
         <h2 class="section-title" data-i18n="order.contactTitle">取餐聯絡資料</h2>
@@ -152,10 +183,6 @@
           <span id="consent-text"></span>
         </label>
         <p id="form-error" class="banner banner--danger" hidden></p>
-        <button id="submit-btn" class="btn btn--primary btn--lg btn--block" type="submit">
-          <span class="material-symbols-rounded icon" aria-hidden="true">send</span>
-          <span data-i18n="order.submit">送出訂單</span>
-        </button>
       </form>
     </section>
   </main>
@@ -172,6 +199,22 @@
   <div id="detail-bar" class="cart-bar detail-bar" hidden>
     <div class="cart-bar__inner">
       <button id="detail-add" type="button" class="btn btn--primary btn--lg btn--block press" data-i18n="detail.addToOrder">加入訂單</button>
+    </div>
+  </div>
+
+  <!-- 確認訂單第一頁的「繼續」、第二頁的「送出訂單」：固定在畫面底部，不放在任何資訊方框內 -->
+  <div id="checkout-bar" class="cart-bar detail-bar" hidden>
+    <div class="cart-bar__inner">
+      <button id="continue-btn" type="button" class="btn btn--primary btn--lg btn--block press" data-i18n="order.continue">繼續</button>
+    </div>
+  </div>
+
+  <div id="info-bar" class="cart-bar detail-bar" hidden>
+    <div class="cart-bar__inner">
+      <button id="submit-btn" class="btn btn--primary btn--lg btn--block press" type="submit" form="checkout-form">
+        <span class="material-symbols-rounded icon" aria-hidden="true">send</span>
+        <span data-i18n="order.submit">送出訂單</span>
+      </button>
     </div>
   </div>
 

@@ -8,6 +8,7 @@ import {
   countItems, isFinal, priceLines, stockProblems, stockUpdates, ORDER_TTL_MS, ACTIVE_STATUSES,
   optionProblems, cleanLines,
 } from '../core/order-logic.js';
+import { SUB_PREFS, applyLineChanges } from '../core/shortage.js';
 
 const DB_KEY = 'tab-demo-db-v1';
 const UID_KEY = 'tab-demo-uid';
@@ -117,6 +118,20 @@ function watch(selector, cb) {
 
 // 模擬網路延遲，讓按鈕處理中狀態在展示模式也看得到
 const delay = (ms = 120) => new Promise((r) => setTimeout(r, ms));
+
+// 訂單結束時解除電話綁定(與正式版相同規則)
+function releasePhone(orderId) {
+  const phone = db.contacts[orderId]?.phone;
+  if (phone && db.activePhones[phone]?.orderId === orderId) delete db.activePhones[phone];
+}
+
+// 清除已結束或已不存在訂單的電話綁定(進行中的不清除)
+function cleanupPhoneLocks() {
+  for (const [phone, lock] of Object.entries(db.activePhones)) {
+    const o = db.orders[lock.orderId];
+    if (!o || isFinal(o)) delete db.activePhones[phone];
+  }
+}
 
 function newId() {
   return `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
@@ -256,8 +271,9 @@ export const api = {
     return readImg(`site:${id}`);
   },
 
-  async submitPreorder({ lines, surname, title, phone, consentText, lang = 'zh-Hant' }) {
+  async submitPreorder({ lines, surname, title, phone, consentText, lang = 'zh-Hant', subPref }) {
     await delay(300);
+    if (!SUB_PREFS.includes(subPref)) throw new ApiError('invalid');
     const uid = customerUid();
     const settings = { ...DEFAULT_SETTINGS, ...db.settings };
     if (!settings.acceptingPreorders) throw new ApiError('closed');
@@ -267,7 +283,8 @@ export const api = {
     const session = db.sessions[uid];
     if (!session || session.used) throw new ApiError('session-invalid');
     const lock = db.activePhones[phone];
-    if (lock && !isFinal(db.orders[lock.orderId])) throw new ApiError('phone-active');
+    // 綁定的舊訂單已不存在時視為已結束
+    if (lock && db.orders[lock.orderId] && !isFinal(db.orders[lock.orderId])) throw new ApiError('phone-active');
     const problems = [...stockProblems(lines, itemsMap()), ...optionProblems(lines, itemsMap())];
     if (problems.length) throw new ApiError('sold-out', `無法供應：${problems.join('、')}`);
 
@@ -278,7 +295,7 @@ export const api = {
     db.orders[id] = {
       id, type: 'preorder', seq, no, status: 'pending', uid,
       items: cleanLines(lines, itemsMap()),
-      itemCount: count, surname, title, lang, pushEnabled: false, messages: [],
+      itemCount: count, surname, title, lang, pushEnabled: false, messages: [], subPref,
       createdAt: now, updatedAt: now,
     };
     db.contacts[id] = { orderId: id, surname, phone, consentNotify: true, consentText, consentAt: now, createdAt: now };
@@ -391,6 +408,7 @@ export const api = {
     const o = getOrder(orderId);
     if (o.status !== 'pending') throw new ApiError('bad-state');
     Object.assign(o, { status: 'rejected', rejectReason: reason || '', rejectReasonTr: reasonTr || '', rejectedAt: Date.now(), updatedAt: Date.now() });
+    releasePhone(orderId);
     commit();
   },
 
@@ -419,7 +437,93 @@ export const api = {
     if (!['accepted', 'ready'].includes(o.status)) throw new ApiError('bad-state');
     const now = Date.now();
     Object.assign(o, { status: 'picked', pickedAt: now, readyAt: o.readyAt || now, payment: payment || o.payment || '園遊券', updatedAt: now });
+    releasePhone(orderId);
     commit();
+  },
+
+  // ===== 已接單後的缺貨處理 =====
+  async changeOrderLines(orderId, actions, {
+    message = '', messageTr = '', clearShortage = false, cancelReason = '', shortageId = '',
+  } = {}) {
+    await delay();
+    requireRole(STAFF);
+    const o = getOrder(orderId);
+    if (!['accepted', 'ready'].includes(o.status) || !o.lines?.length) throw new ApiError('bad-state');
+    if (shortageId && o.shortage?.id !== shortageId) throw new ApiError('bad-state');
+    const res = applyLineChanges(o.lines, itemsMap(), actions);
+    for (const [id, delta] of Object.entries(res.stock)) {
+      if (delta && db.items[id]) db.items[id].soldCount = Math.max(0, (db.items[id].soldCount || 0) + delta);
+    }
+    const now = Date.now();
+    Object.assign(o, { lines: res.lines, total: res.total, itemCount: res.itemCount, totalChanged: true, updatedAt: now });
+    if (message) o.messages = [...(o.messages || []), { text: message, at: now, ...(messageTr ? { tr: messageTr } : {}) }];
+    if (clearShortage) {
+      delete o.shortage;
+      delete o.shortageReply;
+    }
+    const cancelled = res.lines.length === 0;
+    if (cancelled) {
+      Object.assign(o, { status: 'cancelled', cancelledBy: 'stall', cancelReason: cancelReason || '品項已售完', cancelledAt: now });
+      releasePhone(orderId);
+    }
+    commit();
+    return { cancelled, notes: res.notes };
+  },
+
+  async requestShortage(orderId, requests) {
+    await delay();
+    requireRole(STAFF);
+    const o = getOrder(orderId);
+    const id = newId().slice(0, 12);
+    o.shortage = { id, requests, sentAt: Date.now() };
+    delete o.shortageReply;
+    o.updatedAt = Date.now();
+    commit();
+    return id;
+  },
+
+  async replyShortage(orderId, shortageId, answers) {
+    await delay();
+    const o = getOrder(orderId);
+    if (o.shortage?.id !== shortageId) throw new ApiError('bad-state');
+    o.shortageReply = { id: shortageId, answers, at: Date.now() };
+    o.updatedAt = Date.now();
+    commit();
+  },
+
+  async cancelByStall(orderId, reason, reasonTr = '') {
+    await delay();
+    requireRole(STAFF);
+    const o = getOrder(orderId);
+    if (!['accepted', 'ready'].includes(o.status)) throw new ApiError('bad-state');
+    for (const l of o.lines || []) {
+      if (db.items[l.itemId]) db.items[l.itemId].soldCount = Math.max(0, (db.items[l.itemId].soldCount || 0) - l.qty);
+    }
+    const now = Date.now();
+    Object.assign(o, { status: 'cancelled', cancelledBy: 'stall', cancelReason: reason || '', cancelReasonTr: reasonTr || '', cancelledAt: now, updatedAt: now });
+    delete o.shortage;
+    delete o.shortageReply;
+    releasePhone(orderId);
+    commit();
+  },
+
+  async getSubMemory(key) {
+    return structuredClone(db.subMemory?.[key]?.candidates || null);
+  },
+
+  async saveSubMemory(key, candidates) {
+    requireRole(STAFF);
+    db.subMemory = db.subMemory || {};
+    db.subMemory[key] = { candidates, updatedAt: Date.now() };
+    commit();
+  },
+
+  async clearSubMemory() {
+    requireRole(ADMIN);
+    const n = Object.keys(db.subMemory || {}).length;
+    db.subMemory = {};
+    commit();
+    return n;
   },
 
   async sendMessage(orderId, text, tr = '') {
@@ -700,6 +804,7 @@ export const api = {
       if (!o) continue;
       Object.assign(o, { status: 'cancelled', voided: true, cancelledAt: now, updatedAt: now });
     }
+    cleanupPhoneLocks();
     commit();
     return ids.length;
   },
@@ -707,6 +812,7 @@ export const api = {
   async resetCounters() {
     requireRole(ADMIN);
     db.counters = { A: { value: 0 }, B: { value: 0 } };
+    cleanupPhoneLocks();
     commit();
   },
 

@@ -16,7 +16,11 @@ import {
 } from '../core/order-logic.js';
 import { chime, startChimeLoop, stopChimeLoop, unlockAudio } from '../core/sound.js';
 import { qrSvg } from '../core/qr.js';
-import { personNameFor } from '../core/i18n.js';
+import { personNameFor, t as tr } from '../core/i18n.js';
+import {
+  SUB_PREF_LABEL, REPLY_WAIT_MS, CANCEL_REASONS, memoryKey, suggestCandidates, candidateLabel, candidatePrice,
+  applyLineChanges, notesText,
+} from '../core/shortage.js';
 import { DEFAULT_SETTINGS } from '../core/defaults.js';
 import {
   optionGroups, hasOptions, groupRule, ruleText, sortedChoices, blockedByOptions,
@@ -94,6 +98,8 @@ function cardHtml(o, forceOpen = false) {
     overdue ? `<span class="badge badge--danger">逾時 ${minutesSince(o.readyAt)} 分</span>` : '',
     ['rejected', 'cancelled'].includes(o.status) ? `<span class="badge badge--danger">${o.voided ? '已作廢' : STATUS_LABEL[o.status]}</span>` : '',
     o.status === 'picked' && o.payment && !singlePayment() ? `<span class="badge">${escapeHtml(o.payment)}</span>` : '',
+    o.shortage ? '<span class="badge badge--warning">等待顧客選擇替代</span>' : '',
+    o.totalChanged && ACTIVE_STATUSES.includes(o.status) ? '<span class="badge">已修改明細</span>' : '',
   ].join('');
 
   let actions = '';
@@ -105,10 +111,13 @@ function cardHtml(o, forceOpen = false) {
     actions = `${qrButton(o)}
       <button class="btn btn--primary" data-act="ready">${icon('notifications_active')}完成，通知取餐</button>
       <button class="btn" data-act="message">${icon('chat')}傳訊息</button>
+      ${o.type === 'preorder' ? `<button class="btn" data-act="shortage">${icon('inventory_2')}缺貨處理</button>` : ''}
       <button class="btn btn--ghost" data-act="picked">${icon('done_all')}已取餐</button>`;
   } else if (o.status === 'ready') {
-    actions = `${qrButton(o)}
-      <button class="btn btn--primary" data-act="picked">${icon('done_all')}已取餐</button>
+    // 取餐後一定要按「已取餐」才會結束訂單、解除電話綁定，所以放大並放在最前面
+    actions = `<button class="btn btn--primary btn--lg btn--block order-card__pick" data-act="picked">${icon('done_all')}已取餐 / 結帳</button>
+      ${qrButton(o)}
+      ${o.type === 'preorder' ? `<button class="btn" data-act="shortage">${icon('inventory_2')}缺貨處理</button>` : ''}
       <button class="btn" data-act="message">${icon('chat')}傳訊息</button>
       <button class="btn" data-act="sms">${icon('sms')}簡訊通知</button>
       <button class="btn btn--ghost" data-act="undo">${icon('undo')}退回製作中</button>`;
@@ -137,6 +146,9 @@ function cardHtml(o, forceOpen = false) {
         </ul>
         ${o.messages?.length ? `<div class="text-sm">${o.messages.map((m) => `<p class="muted">${time(m.at)} 已傳：${escapeHtml(m.text)}</p>`).join('')}</div>` : ''}
         ${o.rejectReason ? `<p class="text-sm">拒絕原因：${escapeHtml(o.rejectReason)}</p>` : ''}
+        ${o.cancelReason ? `<p class="text-sm">取消原因：${escapeHtml(o.cancelReason)}</p>` : ''}
+        ${o.type === 'preorder' && o.subPref && ACTIVE_STATUSES.includes(o.status) ? `<p class="text-sm">缺貨時：<strong>${SUB_PREF_LABEL[o.subPref] || ''}</strong></p>` : ''}
+        ${shortageHtml(o)}
         <p class="text-sm muted" data-contact>${contact ? `電話 ${escapeHtml(contact.phone)}` : (contact === null ? '沒有留電話' : '電話載入中')}</p>
         ${actions ? `<div class="order-card__actions">${actions}</div>` : ''}
       </div>
@@ -236,6 +248,7 @@ document.addEventListener('click', (e) => {
   const handlers = {
     accept: doAccept, reject: doReject, ready: doReady, picked: doPicked,
     undo: doUndo, message: doMessage, sms: doSms,
+    shortage: doShortage, 'short-timeout': doShortageTimeout,
     qr: async (order) => showPickupTicket(order.id, order.no, order.total),
   };
   withBusy(btn, () => handlers[btn.dataset.act](o));
@@ -404,6 +417,300 @@ async function doSms(o) {
   location.href = `sms:${contact.phone}?&body=${encodeURIComponent(body)}`;
 }
 
+// ===== 缺貨處理(已接單的預點訂單) =====
+// 顧客偏好：choose 立即選擇替代商品 / similar 更換為任何類似商品 / remove 刪除該品項
+// 只缺部分數量：直接刪除缺的份數，保留其餘，並通知顧客
+
+// 訂單卡上的替代詢問狀態：倒數 1.5 分鐘，逾時可一鍵刪除
+function shortageHtml(o) {
+  if (!o.shortage) return '';
+  const left = Math.ceil((o.shortage.sentAt + REPLY_WAIT_MS - Date.now()) / 1000);
+  const map = itemsById();
+  const items = o.shortage.requests.map((r) => `${candidateLabel(r, map)} ×${r.qty}`).join('、');
+  if (left > 0) {
+    return `<p class="text-sm short-wait">${icon('timer', 'icon--sm')}等待顧客選擇替代品(${escapeHtml(items)})・剩 <strong data-short-left="${o.id}">${left}</strong> 秒</p>`;
+  }
+  return `<div class="banner banner--danger short-wait">${icon('timer')}<div><p><strong>顧客未回覆</strong>(${escapeHtml(items)})</p>
+    <button class="btn btn--sm btn--danger" data-act="short-timeout">刪除該品項</button></div></div>`;
+}
+
+// 每秒更新倒數；時間到時重畫訂單卡(顯示「顧客未回覆」)
+setInterval(() => {
+  let expired = false;
+  for (const el of $$('[data-short-left]')) {
+    const o = byId(el.dataset.shortLeft);
+    if (!o?.shortage) continue;
+    const left = Math.ceil((o.shortage.sentAt + REPLY_WAIT_MS - Date.now()) / 1000);
+    if (left <= 0) expired = true;
+    else el.textContent = left;
+  }
+  if (expired) renderBoard();
+}, 1000);
+
+// 顧客語言的通知文字(中文顧客回傳空字串)
+function customerText(o, fn) {
+  return o.lang && o.lang !== 'zh-Hant' ? fn(o.lang) : '';
+}
+
+async function notifyChange(o, zh, trText) {
+  if (o.pushEnabled) api.notifyCustomer(o.id, 'message', trText || zh);
+}
+
+// 依明細找到目前的列(明細可能已被修改，索引會變動)
+function findLine(lines, itemId, sel) {
+  const key = selKey(sel || []);
+  return lines.findIndex((l) => l.itemId === itemId && selKey(l.sel || []) === key);
+}
+
+// 套用修改並通知顧客
+async function applyChanges(o, actions, opts = {}) {
+  const map = itemsById();
+  const preview = applyLineChanges(o.lines, map, actions);
+  const message = notesText(preview.notes, map, 'zh-Hant');
+  const messageTr = customerText(o, (lang) => notesText(preview.notes, map, lang));
+  const res = await api.changeOrderLines(o.id, actions, { message, messageTr, ...opts });
+  notifyChange(o, message, messageTr);
+  return res;
+}
+
+async function doShortage(o) {
+  const lines = o.lines || [];
+  if (!lines.length) return;
+  const { value, data } = await openDialog({
+    title: `缺貨處理 ${o.no}`,
+    body: `
+      <p class="text-sm">顧客偏好：<strong>${SUB_PREF_LABEL[o.subPref] || SUB_PREF_LABEL.remove}</strong></p>
+      ${o.shortage ? '<p class="banner">這張訂單正在等待顧客選擇替代品，新的詢問會取代目前的詢問。</p>' : ''}
+      <p class="muted text-sm">勾選缺貨的品項並填寫缺幾份。只缺部分數量時，直接刪除缺的份數並通知顧客。</p>
+      <div class="short-lines">
+        ${lines.map((l, i) => `<div class="short-line">
+          <label class="check"><input type="checkbox" name="pick" value="${i}"><span>${escapeHtml(lineLabel(l))} ×${l.qty}</span></label>
+          <label class="short-line__qty"><span class="field__hint">缺</span><input class="input" type="number" name="q_${i}" min="1" max="${l.qty}" value="${l.qty}"></label>
+        </div>`).join('')}
+      </div>`,
+    actions: [
+      { label: '刪除整張訂單', value: 'cancel-all', variant: 'danger' },
+      { label: '下一步', value: 'next' },
+    ],
+  });
+  if (value === 'cancel-all') return doCancelAll(o);
+  if (value !== 'next') return undefined;
+  const picks = data.getAll('pick').map(Number);
+  if (!picks.length) {
+    toast('請勾選缺貨的品項', 'danger');
+    return undefined;
+  }
+  const immediate = []; // 直接刪除或替代
+  const requests = []; // 請顧客選擇
+  const pref = o.subPref || 'remove';
+  for (const i of picks) {
+    const line = lines[i];
+    const short = Math.max(1, Math.min(line.qty, Math.round(Number(data.get(`q_${i}`)) || line.qty)));
+    if (short < line.qty || pref === 'remove') {
+      immediate.push({ index: i, removeQty: short });
+      continue;
+    }
+    // 整個品項缺貨：依顧客偏好準備替代清單
+    const list = await editCandidates(o, line, pref);
+    if (list === null) return undefined; // 攤位取消操作
+    if (pref === 'similar') {
+      immediate.push({ index: i, removeQty: short, replace: list.picked || null });
+    } else if (list.candidates.length) {
+      requests.push({ key: `r${i}`, itemId: line.itemId, sel: line.sel || [], qty: short, candidates: list.candidates });
+    } else {
+      immediate.push({ index: i, removeQty: short }); // 沒有可替代的品項：直接刪除
+    }
+  }
+  try {
+    if (immediate.length) {
+      const res = await applyChanges(o, immediate);
+      if (res.cancelled) {
+        toast(`${o.no} 的品項已全部刪除，訂單已取消`, 'info', 5000);
+        return undefined;
+      }
+    }
+    if (requests.length) {
+      await api.requestShortage(o.id, requests);
+      const zh = tr('short.askPush', { no: o.no }, 'zh-Hant');
+      notifyChange(o, zh, customerText(o, (lang) => tr('short.askPush', { no: o.no }, lang)));
+      toast(`已請顧客選擇替代品，等待 ${Math.round(REPLY_WAIT_MS / 1000)} 秒`, 'success');
+    } else {
+      toast(`${o.no} 已更新明細並通知顧客`, 'success');
+    }
+    openIds.add(o.id);
+  } catch (err) {
+    toast(errorText(err), 'danger');
+  }
+  return undefined;
+}
+
+// 替代清單：先帶入攤位上次的設定(記憶)，沒有時自動建議；攤位可刪除、新增、設定選項
+// pref === 'similar'：從清單中選定一項直接替代 → { picked }
+// pref === 'choose'：確認清單後送給顧客 → { candidates }
+async function editCandidates(o, line, pref) {
+  const map = itemsById();
+  const key = memoryKey(line.itemId, line.sel || []);
+  let list = null;
+  try {
+    const mem = await api.getSubMemory(key);
+    if (mem?.length) list = mem.filter((c) => map[c.itemId]).map((c) => ({ ...c, complete: !selProblems(map[c.itemId], normalizeSel(map[c.itemId], c)).length }));
+  } catch (err) {
+    console.warn(err);
+  }
+  if (!list?.length) list = suggestCandidates(line, map);
+  const others = menu.filter((it) => it.active !== false);
+  const result = await openDialog({
+    title: `${lineLabel(line)} 的替代品`,
+    size: 'wide',
+    body: `
+      <p class="muted text-sm">${pref === 'similar' ? '顧客同意由攤位挑選替代品：請選定一項。' : '確認要提供給顧客的替代清單(可刪除或新增)，送出後顧客有 1.5 分鐘可以選擇。'}</p>
+      <div class="cand-list" data-cands></div>
+      <div class="row">
+        <select class="select" data-cand-add-item style="flex:1">${others.map((it) => `<option value="${it.id}">${escapeHtml(it.name)}</option>`).join('')}</select>
+        <button type="button" class="btn btn--sm" data-cand-add>${icon('add', 'icon--sm')}加入</button>
+      </div>`,
+    actions: [{ label: pref === 'similar' ? '套用替代' : '送給顧客', value: 'ok' }],
+    onOpen(dlg) {
+      const box = dlg.querySelector('[data-cands]');
+      const draw = () => {
+        box.innerHTML = list.length ? list.map((c, i) => `
+          <div class="cand ${c.complete ? '' : 'is-incomplete'}">
+            ${pref === 'similar' ? `<input type="radio" name="cand" value="${i}" ${c.complete ? '' : 'disabled'} ${i === 0 && c.complete ? 'checked' : ''} aria-label="選定">` : ''}
+            <span class="cand__label">${escapeHtml(candidateLabel(c, map))}<span class="muted text-sm">・${money(candidatePrice(c, map))}</span>${c.complete ? '' : '<span class="badge badge--danger">需設定選項</span>'}</span>
+            ${optionGroups(map[c.itemId]).length ? `<button type="button" class="btn btn--sm" data-cand-set="${i}">設定選項</button>` : ''}
+            <button type="button" class="btn btn--ghost btn--icon" data-cand-del="${i}" aria-label="刪除">${icon('close', 'icon--sm')}</button>
+          </div>`).join('') : '<p class="muted text-sm">清單是空的：送出後會直接刪除該品項。</p>';
+      };
+      draw();
+      dlg.addEventListener('click', async (e) => {
+        const del = e.target.closest('[data-cand-del]');
+        const set = e.target.closest('[data-cand-set]');
+        if (del) {
+          list.splice(Number(del.dataset.candDel), 1);
+          draw();
+        }
+        if (set) {
+          const c = list[Number(set.dataset.candSet)];
+          const res = await chooseOptions(map[c.itemId], { prev: c.sel, withQty: false, title: `${map[c.itemId].name} 的選項` });
+          if (res) Object.assign(c, { sel: res.sel, complete: true });
+          draw();
+        }
+        if (e.target.closest('[data-cand-add]')) {
+          const it = map[dlg.querySelector('[data-cand-add-item]').value];
+          if (!it || list.length >= 8) return;
+          let sel = [];
+          if (optionGroups(it).length) {
+            const res = await chooseOptions(it, { withQty: false, title: `${it.name} 的選項` });
+            if (!res) return;
+            sel = res.sel;
+          }
+          list.push({ itemId: it.id, sel, complete: true });
+          draw();
+        }
+      });
+      // 送出前檢查：還有未設定選項的項目時不關閉
+      dlg.querySelector('form').addEventListener('submit', (e) => {
+        if (e.submitter?.value !== 'ok') return;
+        if (list.some((c) => !c.complete)) {
+          e.preventDefault();
+          toast('還有項目需要設定選項', 'danger');
+        } else if (pref === 'similar' && list.length && !dlg.querySelector('input[name=cand]:checked')) {
+          e.preventDefault();
+          toast('請選定一個替代品', 'danger');
+        }
+      });
+    },
+  });
+  if (result.value !== 'ok') return null;
+  const candidates = list.map(({ itemId, sel }) => ({ itemId, sel }));
+  // 記住這次的設定，下次相同品項缺貨時自動帶入
+  try {
+    await api.saveSubMemory(key, candidates);
+  } catch (err) {
+    console.warn(err);
+  }
+  if (pref === 'similar') {
+    const i = Number(result.data.get('cand'));
+    return { picked: Number.isInteger(i) && candidates[i] ? candidates[i] : null };
+  }
+  return { candidates };
+}
+
+// 顧客已回覆：自動套用(多台攤位裝置同時處理時，只會套用一次)
+const resolving = new Set();
+function resolveReplies() {
+  for (const o of orders) {
+    const sh = o.shortage;
+    if (!sh || o.shortageReply?.id !== sh.id || resolving.has(sh.id)) continue;
+    resolving.add(sh.id);
+    const map = itemsById();
+    const actions = [];
+    for (const r of sh.requests) {
+      const index = findLine(o.lines || [], r.itemId, r.sel);
+      if (index < 0) continue;
+      const ans = o.shortageReply.answers?.[r.key];
+      const cand = Number.isInteger(ans) && ans >= 0 ? r.candidates[ans] : null;
+      actions.push({ index, removeQty: r.qty, replace: cand && map[cand.itemId] ? cand : null });
+    }
+    applyChanges(o, actions, { clearShortage: true, shortageId: sh.id })
+      .then(() => {
+        chime();
+        toast(`${o.no} 顧客已選擇替代品，明細已更新`, 'success', 5000);
+      })
+      .catch((err) => {
+        if (err.code !== 'bad-state') toast(errorText(err), 'danger');
+      });
+  }
+}
+
+// 顧客未回覆：刪除詢問中的品項
+async function doShortageTimeout(o) {
+  const sh = o.shortage;
+  if (!sh) return;
+  const actions = sh.requests
+    .map((r) => ({ index: findLine(o.lines || [], r.itemId, r.sel), removeQty: r.qty }))
+    .filter((a) => a.index >= 0);
+  try {
+    const res = await applyChanges(o, actions, { clearShortage: true, shortageId: sh.id });
+    toast(res.cancelled ? `${o.no} 的品項已全部刪除，訂單已取消` : `${o.no} 已刪除未回覆的品項`, 'info', 5000);
+  } catch (err) {
+    if (err.code !== 'bad-state') toast(errorText(err), 'danger');
+  }
+}
+
+// 刪除整張訂單(已接單後)：常用原因可點選，也可以自行修改文字
+async function doCancelAll(o) {
+  const { value, data } = await openDialog({
+    title: `刪除整張訂單 ${o.no}`,
+    body: `
+      <div class="radio-group" data-reasons>
+        ${CANCEL_REASONS.map((r) => `<button type="button" class="btn btn--sm" data-reason="${escapeHtml(r)}">${escapeHtml(r)}</button>`).join('')}
+      </div>
+      <label class="field"><span class="field__label">原因(會顯示給顧客，可修改)</span>
+        <input class="input" name="reason" maxlength="60" value="${escapeHtml(CANCEL_REASONS[0])}"></label>
+      <p class="muted text-sm">已售數量會加回，顧客會收到通知。</p>`,
+    actions: [{ label: '確定刪除', value: 'ok', variant: 'danger-solid' }],
+    onOpen(dlg) {
+      dlg.querySelector('[data-reasons]').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-reason]');
+        if (b) dlg.querySelector('input[name=reason]').value = b.dataset.reason;
+      });
+    },
+  });
+  if (value !== 'ok') return;
+  const reason = String(data.get('reason') || '').trim();
+  try {
+    const reasonTr = o.lang && o.lang !== 'zh-Hant' ? await translateFor(o.lang, reason) : '';
+    await api.cancelByStall(o.id, reason, reasonTr);
+    const zh = tr('track.stallCancelledPush', { no: o.no, r: reason }, 'zh-Hant');
+    const trText = o.lang && o.lang !== 'zh-Hant' ? tr('track.stallCancelledPush', { no: o.no, r: reasonTr || reason }, o.lang) : '';
+    notifyChange(o, zh, trText);
+    toast(`已刪除 ${o.no}`);
+  } catch (err) {
+    toast(errorText(err), 'danger');
+  }
+}
+
 // ===== 現場點餐 =====
 function savePos() {
   pos.lines = pos.lines.filter((l) => l.qty > 0);
@@ -482,12 +789,13 @@ $('#pos-grid').addEventListener('click', async (e) => {
   posChoose(item);
 });
 
-// 現場點餐：選擇選項群組(必填單選、非必填複選、必填複選)，未完成時保留選擇並提示
-async function posChoose(item, prev = [], prevQty = 1, error = '') {
+// 選擇選項群組(必填單選、非必填複選、必填複選)，未完成時保留選擇並提示
+// withQty：是否同時詢問數量；回傳 { sel, qty }，取消時回傳 null
+async function chooseOptions(item, { prev = [], qty: prevQty = 1, withQty = true, title = item.name, error = '' } = {}) {
   const picked = new Set(prev);
   const groups = optionGroups(item);
   const { value, data } = await openDialog({
-    title: item.name,
+    title,
     body: `${error ? `<p class="banner banner--danger">${escapeHtml(error)}</p>` : ''}
       ${groups.map((g) => {
         const { multi, required } = groupRule(g);
@@ -499,20 +807,24 @@ async function posChoose(item, prev = [], prevQty = 1, error = '') {
           }).join('')}</div>
         </fieldset>`;
       }).join('')}
-      <label class="field"><span class="field__label">數量</span><input class="input" type="number" name="qty" min="1" max="99" value="${prevQty}"></label>`,
-    actions: [{ label: '加入', value: 'add' }],
+      ${withQty ? `<label class="field"><span class="field__label">數量</span><input class="input" type="number" name="qty" min="1" max="99" value="${prevQty}"></label>` : ''}`,
+    actions: [{ label: withQty ? '加入' : '確定', value: 'add' }],
   });
-  if (value !== 'add') return;
+  if (value !== 'add') return null;
   const sel = normalizeSel(item, { sel: groups.flatMap((g) => data.getAll(`s_${g.id}`).concat(data.getAll(`m_${g.id}`))) });
-  const qty = Math.max(1, Number(data.get('qty')) || 1);
+  const qty = withQty ? Math.max(1, Number(data.get('qty')) || 1) : 1;
   const problems = selProblems(item, sel);
   if (problems.length) {
     const p = problems[0];
     const msg = p.reason === 'too-many' ? `「${p.group.name}」超過可選數量` : `請完成「${p.group.name}」的選擇`;
-    posChoose(item, sel, qty, msg);
-    return;
+    return chooseOptions(item, { prev: sel, qty, withQty, title, error: msg });
   }
-  posAdd(item.id, sel, qty);
+  return { sel, qty };
+}
+
+async function posChoose(item) {
+  const res = await chooseOptions(item);
+  if (res) posAdd(item.id, res.sel, res.qty);
 }
 
 $('#pos-lines').addEventListener('click', (e) => {
@@ -728,6 +1040,7 @@ requireStaff('staff', (p) => {
   api.watchTodayOrders((list) => {
     orders = list;
     detectNewOrders();
+    resolveReplies();
     renderBoard();
     if ($('#pickup-q').value) renderPickup();
   });

@@ -1,5 +1,6 @@
 // 訂單進度頁：即時顯示狀態、預估時間、攤位訊息，並提供開啟推播、取消、找回訂單
-import { selText, normalizeSel } from '../core/options.js';
+import { selText, selPrice, normalizeSel } from '../core/options.js';
+import { REPLY_WAIT_MS } from '../core/shortage.js';
 import { api, IS_DEMO } from '../api/index.js';
 import {
   $, icon, toast, confirmDialog, openDialog, showDemoBanner, withBusy,
@@ -253,6 +254,101 @@ function renderNotify() {
   }));
 }
 
+// ===== 攤位詢問替代品項 =====
+// order.shortage = { id, sentAt, requests: [{ key, itemId, sel, qty, candidates: [{ itemId, sel }] }] }
+// 顧客回覆 order.shortageReply = { id, answers: { key: 候選索引(-1 為刪除該品項) } }
+let shortTimer = null;
+function candText(c) {
+  const item = itemsById[c.itemId];
+  if (!item) return '';
+  const sel = normalizeSel(item, c);
+  return withOption(itemText(item).name, selText(item, sel, getLang()));
+}
+
+function renderShortage() {
+  const box = $('#o-short');
+  const sh = order.shortage;
+  const active = sh && ['accepted', 'ready'].includes(order.status);
+  clearInterval(shortTimer);
+  if (!active) {
+    box.hidden = true;
+    box.dataset.id = '';
+    return;
+  }
+  box.hidden = false;
+  const replied = order.shortageReply?.id === sh.id;
+  if (replied) {
+    box.innerHTML = `<p class="row">${icon('check_circle')}<strong>${t('short.sent')}</strong></p>`;
+    box.dataset.id = sh.id;
+    return;
+  }
+  if (box.dataset.id === sh.id && box.querySelector('form')) {
+    tickShortage();
+    shortTimer = setInterval(tickShortage, 1000);
+    return; // 已顯示同一則詢問：保留顧客已勾選的內容
+  }
+  box.dataset.id = sh.id;
+  box.innerHTML = `
+    <div class="short-ask__head"><h2 class="section-title" style="margin:0">${t('short.askTitle')}</h2><span class="short-ask__timer" data-short-timer></span></div>
+    <p class="text-sm muted">${t('short.askBody')}</p>
+    <form class="stack" data-short-form>
+      ${sh.requests.map((r) => {
+        const item = itemsById[r.itemId];
+        const name = item ? withOption(itemText(item).name, selText(item, normalizeSel(item, r), getLang())) : '';
+        return `<fieldset class="og short-ask__set">
+          <legend class="short-ask__item">${escapeHtml(name)} ×${r.qty}</legend>
+          <div class="og__rows">
+            ${r.candidates.map((c, i) => {
+              const it = itemsById[c.itemId];
+              const price = it ? it.price + selPrice(it, normalizeSel(it, c)) : 0;
+              return `<label class="og__row"><span class="og__text"><span class="og__name">${escapeHtml(candText(c))}</span><span class="og__price">${money(price)}</span></span>
+                <input class="og__input" type="radio" name="r_${escapeHtml(r.key)}" value="${i}" required>
+                <span class="og__mark og__mark--radio" aria-hidden="true"></span></label>`;
+            }).join('')}
+            <label class="og__row"><span class="og__text"><span class="og__name">${t('sub.remove')}</span></span>
+              <input class="og__input" type="radio" name="r_${escapeHtml(r.key)}" value="-1" required>
+              <span class="og__mark og__mark--radio" aria-hidden="true"></span></label>
+          </div>
+        </fieldset>`;
+      }).join('')}
+      <button class="btn btn--primary btn--block press" type="submit">${t('short.submit')}</button>
+    </form>`;
+  tickShortage();
+  shortTimer = setInterval(tickShortage, 1000);
+}
+
+function tickShortage() {
+  const el = $('[data-short-timer]');
+  if (!el || !order?.shortage) return;
+  const left = Math.max(0, Math.ceil((order.shortage.sentAt + REPLY_WAIT_MS - Date.now()) / 1000));
+  el.textContent = t('short.left', { s: left });
+}
+
+$('#o-short').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const formEl = e.target.closest('[data-short-form]');
+  const sh = order?.shortage;
+  if (!formEl || !sh) return;
+  const data = new FormData(formEl);
+  const answers = {};
+  for (const r of sh.requests) {
+    const v = data.get(`r_${r.key}`);
+    if (v == null) {
+      formEl.querySelector(`[name="r_${CSS.escape(r.key)}"]`)?.closest('fieldset')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    answers[r.key] = Number(v);
+  }
+  withBusy(formEl.querySelector('button[type=submit]'), async () => {
+    try {
+      await api.replyShortage(order.id, sh.id, answers);
+      stopAlarm();
+    } catch (err) {
+      toast(errorText(err), 'danger');
+    }
+  });
+});
+
 function renderOrder() {
   show('order');
   const type = order.type === 'walkin' ? 'walkin' : 'preorder';
@@ -278,15 +374,17 @@ function renderOrder() {
 
   // 進度條(狀態沒變時不重畫，避免動畫重播)
   const steps = $('#o-steps');
-  const idx = expired ? null : STEP_INDEX[order.status];
+  // 攤位取消訂單：跳到最後階段，進度條整條變紅
+  const stallCancelled = order.status === 'cancelled' && order.cancelledBy === 'stall';
+  const idx = expired ? null : (stallCancelled ? 3 : STEP_INDEX[order.status]);
   steps.hidden = idx == null;
-  const stepsKey = `${type}:${order.status}:${getLang()}`;
+  const stepsKey = `${type}:${order.status}:${stallCancelled}:${getLang()}`;
   if (steps.dataset.key !== stepsKey) {
     steps.dataset.key = stepsKey;
-    const complete = order.status === 'picked';
+    const complete = order.status === 'picked' || stallCancelled;
     steps.classList.toggle('steps--complete', complete);
     steps.innerHTML = complete
-      ? `<li class="step step--complete"><span class="step__bar"></span><span class="visually-hidden">${t('step.picked')}</span></li>`
+      ? `<li class="step ${stallCancelled ? 'step--cancelled' : 'step--complete'}"><span class="step__bar"></span><span class="visually-hidden">${t(stallCancelled ? 'track.stallCancelled' : 'step.picked')}</span></li>`
       : STEP_KEYS[type].map((key, i) => {
         const name = t(key);
         let cls = '';
@@ -304,12 +402,16 @@ function renderOrder() {
     // 拒絕原因：顧客選英日文時顯示攤位送出時翻譯好的版本
     const reason = getLang() !== 'zh-Hant' && order.rejectReasonTr ? order.rejectReasonTr : order.rejectReason;
     alertBox.innerHTML = `<div class="banner banner--danger">${icon('error')}<div><p><strong>${t('track.rejTitle')}</strong></p>${reason ? `<p>${escapeHtml(t('track.rejReason', { r: reason }))}</p>` : ''}<p>${t('track.rejHint')}</p></div></div>`;
+  } else if (stallCancelled) {
+    const reason = getLang() !== 'zh-Hant' && order.cancelReasonTr ? order.cancelReasonTr : order.cancelReason;
+    alertBox.innerHTML = `<div class="banner banner--danger">${icon('error')}<div><p><strong>${t('track.stallCancelled')}</strong></p>${reason ? `<p>${escapeHtml(t('track.stallCancelledReason', { r: reason }))}</p>` : ''}<p>${t('track.rejHint')}</p></div></div>`;
   } else if (order.status === 'cancelled') {
     alertBox.innerHTML = `<div class="banner">${icon('info')}<p>${t(order.voided ? 'track.voided' : 'track.cancelled')}</p></div>`;
   } else if (order.status === 'ready') {
     alertBox.innerHTML = `<div class="banner">${icon('notifications_active')}<p><strong>${t('track.readyStrong')}</strong> ${escapeHtml(t('track.readyBody', { no: order.no }))}</p></div>`;
   } else alertBox.innerHTML = '';
 
+  renderShortage();
   renderNotify();
   renderGuide();
   renderReady();
@@ -325,7 +427,7 @@ function renderOrder() {
   const lines = displayLines(order, itemsById);
   $('#o-lines').innerHTML = lines.map((l) => `
     <div class="summary-row"><span>${escapeHtml(localLineLabel(l))} × ${l.qty}</span><span>${money(l.subtotal)}</span></div>`).join('');
-  $('#o-total').textContent = totalMoney(displayTotal(order, itemsById));
+  $('#o-total').innerHTML = `${order.totalChanged ? `<span class="total-changed">${t('short.totalChanged')}</span>` : ''}${escapeHtml(totalMoney(displayTotal(order, itemsById)))}`;
   $('#o-time').innerHTML = `<p>${escapeHtml(t('track.sentAt', { t: dateTime(order.createdAt) }))}</p>${order.establishedAt ? `<p>${escapeHtml(t('track.confirmedAt', { t: dateTime(order.establishedAt) }))}</p>` : ''}`;
 
   $('#o-cancel').hidden = !canCancel();
@@ -367,6 +469,15 @@ function notifyChanges() {
       beep(1);
       toast(t('track.rejTitle'), 'danger');
     }
+  }
+  // 攤位詢問替代品項：響鈴約 10 秒(比取餐通知短)
+  if (order.shortage && order.shortage.id !== prevOrder.shortage?.id) {
+    startAlarm(10000);
+    showLocalNotification(t('short.askTitle'), t('short.askPush', { no: order.no }));
+  }
+  if (order.status === 'cancelled' && order.cancelledBy === 'stall' && prevOrder.status !== 'cancelled') {
+    beep(2);
+    vibrate();
   }
   const before = prevOrder.messages?.length || 0;
   const after = order.messages?.length || 0;

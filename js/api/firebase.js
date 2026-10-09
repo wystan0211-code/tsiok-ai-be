@@ -9,6 +9,7 @@ import {
   countItems, isFinal, priceLines, stockProblems, stockUpdates, ORDER_TTL_MS, ACTIVE_STATUSES,
   optionProblems, cleanLines,
 } from '../core/order-logic.js';
+import { SUB_PREFS, applyLineChanges } from '../core/shortage.js';
 
 const SDK = `https://www.gstatic.com/firebasejs/${CONFIG.firebaseSdkVersion}`;
 const { initializeApp } = await import(`${SDK}/firebase-app.js`);
@@ -19,7 +20,7 @@ const {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   doc, collection, getDoc, getDocFromCache, getDocs, setDoc, updateDoc, deleteDoc, addDoc, writeBatch,
   onSnapshot, query, where, orderBy, limit, runTransaction,
-  serverTimestamp, arrayUnion, increment, Timestamp,
+  serverTimestamp, arrayUnion, increment, Timestamp, deleteField,
 } = await import(`${SDK}/firebase-firestore.js`);
 
 const app = initializeApp(CONFIG.firebase);
@@ -105,6 +106,32 @@ async function readItems(tx, lines) {
   return map;
 }
 
+
+// 解除電話綁定：訂單結束(取餐、拒絕、取消、作廢)後刪除該電話的綁定，失敗時不影響主要動作
+async function releasePhone(orderId) {
+  try {
+    const contact = snapData(await getDoc(ref('contacts', orderId)));
+    if (!contact?.phone) return;
+    const lock = snapData(await getDoc(ref('activePhones', contact.phone)));
+    if (lock?.orderId === orderId) await deleteDoc(ref('activePhones', contact.phone));
+  } catch (err) {
+    console.warn('解除電話綁定失敗', err);
+  }
+}
+
+// 清除已結束或已不存在訂單的電話綁定(編號歸零、作廢時使用；進行中的訂單不清除)
+async function cleanupPhoneLocks() {
+  try {
+    const snap = await getDocs(collection(db, 'activePhones'));
+    for (const d of snap.docs) {
+      const orderId = d.data().orderId;
+      const order = orderId ? snapData(await getDoc(ref('orders', orderId))) : null;
+      if (!order || isFinal(order)) await deleteDoc(d.ref);
+    }
+  } catch (err) {
+    console.warn('清除電話綁定失敗', err);
+  }
+}
 
 // 呼叫 Apps Script(推播、帳號管理)，附上目前登入者的身分憑證
 async function callScript(action, payload = {}) {
@@ -250,7 +277,8 @@ export const api = {
   // 網站圖片(目前只有攤位位置圖 guide)
   getSiteImage: (id) => guard(async () => readImage('siteImages', id, false)),
 
-  submitPreorder: ({ lines, surname, title, phone, consentText, lang = 'zh-Hant' }) => guard(async () => {
+  submitPreorder: ({ lines, surname, title, phone, consentText, lang = 'zh-Hant', subPref }) => guard(async () => {
+    if (!SUB_PREFS.includes(subPref)) throw new ApiError('invalid');
     const uid = await customerUid();
     const settings = { ...DEFAULT_SETTINGS, ...(snapData(await getDoc(ref('settings', 'app'))) || {}) };
     if (!settings.acceptingPreorders) throw new ApiError('closed');
@@ -272,7 +300,7 @@ export const api = {
         tx.set(ref('counters', 'A'), { value: seq, lastOrderId: orderRef.id });
         tx.set(orderRef, {
           type: 'preorder', seq, no, status: 'pending', uid,
-          items: cleanLines(lines, itemsById), itemCount: count, surname, title, lang, pushEnabled: false,
+          items: cleanLines(lines, itemsById), itemCount: count, surname, title, lang, pushEnabled: false, subPref,
           createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
         });
         tx.set(ref('contacts', orderRef.id), {
@@ -417,6 +445,7 @@ export const api = {
       status: 'rejected', rejectReason: reason || '', rejectReasonTr: reasonTr || '',
       rejectedAt: serverTimestamp(), updatedAt: serverTimestamp(),
     });
+    await releasePhone(orderId);
   }),
 
   markReady: (orderId) => guard(async () => {
@@ -434,6 +463,102 @@ export const api = {
       ...(o?.readyAt ? {} : { readyAt: serverTimestamp() }),
       updatedAt: serverTimestamp(),
     });
+    await releasePhone(orderId);
+  }),
+
+  // ===== 已接單後的缺貨處理 =====
+  // 修改明細：刪除或替代部分品項，調整庫存並通知顧客；品項全部刪除時視為刪除整張訂單
+  // shortageId：處理顧客回覆時帶入，確保同一則回覆只會被套用一次(多台攤位裝置同時處理時)
+  changeOrderLines: (orderId, actions, {
+    message = '', messageTr = '', clearShortage = false, cancelReason = '', shortageId = '',
+  } = {}) => guard(async () => {
+    const oRef = ref('orders', orderId);
+    const result = await runTransaction(db, async (tx) => {
+      const snap = await tx.get(oRef);
+      if (!snap.exists()) throw new ApiError('not-found');
+      const o = snap.data();
+      if (!['accepted', 'ready'].includes(o.status) || !o.lines?.length) throw new ApiError('bad-state');
+      if (shortageId && o.shortage?.id !== shortageId) throw new ApiError('bad-state');
+      const ids = [...new Set([...o.lines.map((l) => l.itemId), ...actions.map((a) => a.replace?.itemId).filter(Boolean)])];
+      const itemsById = await readItems(tx, ids.map((itemId) => ({ itemId })));
+      const res = applyLineChanges(o.lines, itemsById, actions);
+      for (const [id, delta] of Object.entries(res.stock)) {
+        if (delta && itemsById[id]) tx.update(ref('items', id), { soldCount: Math.max(0, (itemsById[id].soldCount || 0) + delta), updatedAt: serverTimestamp() });
+      }
+      const patch = {
+        lines: res.lines, total: res.total, itemCount: res.itemCount, totalChanged: true, updatedAt: serverTimestamp(),
+      };
+      if (message) patch.messages = [...(o.messages || []), { text: message, at: Date.now(), ...(messageTr ? { tr: messageTr } : {}) }];
+      if (clearShortage) {
+        patch.shortage = deleteField();
+        patch.shortageReply = deleteField();
+      }
+      const cancelled = res.lines.length === 0;
+      if (cancelled) {
+        Object.assign(patch, {
+          status: 'cancelled', cancelledBy: 'stall', cancelReason: cancelReason || '品項已售完',
+          cancelledAt: serverTimestamp(),
+        });
+      }
+      tx.update(oRef, patch);
+      return { cancelled, notes: res.notes };
+    });
+    if (result.cancelled) await releasePhone(orderId);
+    return result;
+  }),
+
+  // 請顧客選擇替代品：requests = [{ key, index, itemId, sel, qty, candidates: [{ itemId, sel }] }]
+  requestShortage: (orderId, requests) => guard(async () => {
+    const id = randomToken(6);
+    await updateDoc(ref('orders', orderId), {
+      shortage: { id, requests, sentAt: Date.now() }, shortageReply: deleteField(), updatedAt: serverTimestamp(),
+    });
+    return id;
+  }),
+
+  // 顧客回覆替代選擇：answers = { 請求key: 候選索引(-1 為刪除該品項) }
+  replyShortage: (orderId, shortageId, answers) => guard(async () => {
+    await updateDoc(ref('orders', orderId), {
+      shortageReply: { id: shortageId, answers, at: Date.now() }, updatedAt: serverTimestamp(),
+    });
+  }),
+
+  // 攤位刪除整張訂單(已接單後)：已售數量加回，解除電話綁定
+  cancelByStall: (orderId, reason, reasonTr = '') => guard(async () => {
+    const oRef = ref('orders', orderId);
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(oRef);
+      if (!snap.exists()) throw new ApiError('not-found');
+      const o = snap.data();
+      if (!['accepted', 'ready'].includes(o.status)) throw new ApiError('bad-state');
+      const lines = o.lines || [];
+      const itemsById = await readItems(tx, lines);
+      const back = {};
+      for (const l of lines) back[l.itemId] = (back[l.itemId] || 0) + l.qty;
+      for (const [id, qty] of Object.entries(back)) {
+        if (itemsById[id]) tx.update(ref('items', id), { soldCount: Math.max(0, (itemsById[id].soldCount || 0) - qty), updatedAt: serverTimestamp() });
+      }
+      tx.update(oRef, {
+        status: 'cancelled', cancelledBy: 'stall', cancelReason: reason || '', cancelReasonTr: reasonTr || '',
+        cancelledAt: serverTimestamp(), shortage: deleteField(), shortageReply: deleteField(), updatedAt: serverTimestamp(),
+      });
+    });
+    await releasePhone(orderId);
+  }),
+
+  // 攤位的替代設定記憶(所有攤位裝置共用)
+  getSubMemory: (key) => guard(async () => snapData(await getDoc(ref('subMemory', key)))?.candidates || null),
+  saveSubMemory: (key, candidates) => guard(async () => {
+    await setDoc(ref('subMemory', key), { candidates, updatedAt: serverTimestamp() });
+  }),
+  clearSubMemory: () => guard(async () => {
+    const snap = await getDocs(collection(db, 'subMemory'));
+    for (let i = 0; i < snap.docs.length; i += 400) {
+      const batch = writeBatch(db);
+      snap.docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+    return snap.size;
   }),
 
   // tr：翻譯成顧客語言的訊息(顧客使用中文時為空)
@@ -678,12 +803,14 @@ export const api = {
       }
       await batch.commit();
     }
+    await cleanupPhoneLocks();
     return ids.length;
   }),
 
   resetCounters: () => guard(async () => {
     await setDoc(ref('counters', 'A'), { value: 0, lastOrderId: null });
     await setDoc(ref('counters', 'B'), { value: 0, lastOrderId: null });
+    await cleanupPhoneLocks();
   }),
 
   async resetDemo() {

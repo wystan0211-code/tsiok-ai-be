@@ -89,9 +89,8 @@ function changeLine(index, delta) {
 function showState(name) {
   for (const s of ['loading', 'invalid', 'closed']) $(`#state-${s}`).hidden = s !== name;
   if (name) {
-    for (const v of ['menu', 'detail', 'checkout']) $(`#view-${v}`).hidden = true;
-    $('#cart-bar').hidden = true;
-    $('#detail-bar').hidden = true;
+    for (const v of ['menu', 'detail', 'checkout', 'info']) $(`#view-${v}`).hidden = true;
+    for (const bar of ['#cart-bar', '#detail-bar', '#checkout-bar', '#info-bar']) $(bar).hidden = true;
     $('#marquee').hidden = true;
   }
 }
@@ -99,6 +98,10 @@ function showState(name) {
 function currentView() {
   const hash = decodeURIComponent(location.hash || '');
   if (hash === '#checkout' && cart.lines.length) return { name: 'checkout' };
+  // 第二頁：超過數量上限時不能進入，回到第一頁
+  if (hash === '#info' && cart.lines.length) {
+    return countItems(cart.lines) > (settings?.maxItemsPerOrder || Infinity) ? { name: 'checkout' } : { name: 'info' };
+  }
   if (hash.startsWith('#item=')) {
     const id = hash.slice(6);
     if (itemsById()[id]) return { name: 'detail', id };
@@ -127,6 +130,7 @@ function render() {
   $('#view-menu').hidden = view.name !== 'menu';
   $('#view-detail').hidden = view.name !== 'detail';
   $('#view-checkout').hidden = view.name !== 'checkout';
+  $('#view-info').hidden = view.name !== 'info';
   // 返回鍵：菜單回首頁，詳細頁與確認訂單回菜單
   $('#back-btn').setAttribute('aria-label', view.name === 'menu' ? t('common.backHome') : t('order.back'));
   renderMarquee(view.name === 'menu');
@@ -136,9 +140,11 @@ function render() {
     if (lastViewKey && lastViewKey !== viewKey) requestAnimationFrame(() => window.scrollTo(0, menuScrollY));
   }
   if (view.name === 'detail') renderDetail(view.id, lastViewKey !== viewKey);
-  if (view.name === 'checkout') renderCheckout();
+  if (view.name === 'checkout' || view.name === 'info') renderCheckout();
   if (view.name !== 'menu' && lastViewKey !== viewKey) window.scrollTo(0, 0);
   $('#detail-bar').hidden = view.name !== 'detail';
+  $('#checkout-bar').hidden = view.name !== 'checkout';
+  $('#info-bar').hidden = view.name !== 'info';
   lastViewKey = viewKey;
 }
 
@@ -315,24 +321,22 @@ function menuMoney(n) {
   return `$ ${Number(n || 0).toLocaleString('zh-TW')}`;
 }
 
-// 加入購物車的控制項：
-// 沒有選項：先顯示 +，加入後變成「− 數量 +」；有選項：+ 進入詳細頁選擇，旁邊顯示已加入的數量
+// 加入購物車的控制項：先顯示 +，加入後變成「− 數量 +」
+// 「−」減 1：有選項的品項扣掉最後加入的那一列
 function cartControl(item) {
   const name = escapeHtml(itemText(item).name);
   if (isSoldOut(item)) return `<span class="soldout-tag">${t('order.soldOut')}</span>`;
   const qty = qtyOf(item.id);
-  if (hasOptions(item)) {
-    return `${qty ? `<span class="mi-ctrl__count" aria-label="${t('order.addedCount', { n: qty })}">×${qty}</span>` : ''}
-      <button type="button" class="btn-add press" data-action="open" data-id="${item.id}" aria-label="${t('order.add', { name })}">${icon('add')}</button>`;
-  }
+  // 有選項的品項按「+」進入詳細頁選擇；沒有選項的直接加 1
+  const plus = hasOptions(item) ? 'open' : 'plus';
   if (qty) {
     return `<div class="stepper">
         <button type="button" class="press" data-action="minus" data-id="${item.id}" aria-label="${t('order.decrease', { name })}">${icon('remove', 'icon--sm')}</button>
         <span class="stepper__value" aria-live="polite">${qty}</span>
-        <button type="button" class="press" data-action="plus" data-id="${item.id}" aria-label="${t('order.increase', { name })}">${icon('add', 'icon--sm')}</button>
+        <button type="button" class="press" data-action="${plus}" data-id="${item.id}" aria-label="${t('order.increase', { name })}">${icon('add', 'icon--sm')}</button>
       </div>`;
   }
-  return `<button type="button" class="btn-add press" data-action="plus" data-id="${item.id}" aria-label="${t('order.add', { name })}">${icon('add')}</button>`;
+  return `<button type="button" class="btn-add press" data-action="${plus}" data-id="${item.id}" aria-label="${t('order.add', { name })}">${icon('add')}</button>`;
 }
 
 // 品項列：照片在最左，文字緊貼照片右側；品名與說明使用整個文字區寬度
@@ -460,7 +464,7 @@ $('#menu-sections').addEventListener('click', (e) => {
       bumpFeedback(id, wasEmpty);
     }
     if (action === 'minus') {
-      const idx = cart.lines.findIndex((l) => l.itemId === id);
+      const idx = cart.lines.findLastIndex((l) => l.itemId === id);
       if (idx >= 0) changeLine(idx, -1);
     }
     if (action === 'open') navigate(`#item=${id}`); // 有選項的品項：進入詳細頁選擇
@@ -780,9 +784,13 @@ function renderCheckout() {
   $('#cart-count').textContent = itemCount(count);
   // 總金額：英日文前面標示 NTD
   $('#cart-total').textContent = totalMoney(priced.total);
+  // 超過數量上限：顯示上限數字，「繼續」微退色，按下時不會進入第二頁
+  const over = count > max;
   const warn = $('#limit-warning');
-  warn.hidden = count <= max;
-  warn.innerHTML = `${icon('warning')}<p>${t('order.limitWarn')}</p>`;
+  warn.hidden = !over;
+  warn.innerHTML = `${icon('warning')}<p>${t('order.limitMax', { n: max })}</p>`;
+  $('#continue-btn').classList.toggle('is-faded', over);
+  $('#submit-btn').classList.toggle('is-faded', over);
   $('#consent-text').textContent = settingText(settings, 'consentText');
 }
 
@@ -792,6 +800,27 @@ $('#view-checkout').addEventListener('click', (e) => {
   if (btn.dataset.action === 'line-plus') changeLine(Number(btn.dataset.index), 1);
   if (btn.dataset.action === 'line-minus') changeLine(Number(btn.dataset.index), -1);
 });
+
+// 第一頁「繼續」：超量時捲到提醒並通知攤位收件匣(只有品項與數量，沒有姓氏與電話)，不進入第二頁
+let lastOverReport = '';
+$('#continue-btn').addEventListener('click', async () => {
+  const count = countItems(cart.lines);
+  if (count > settings.maxItemsPerOrder) {
+    const warn = $('#limit-warning');
+    warn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const summary = summarizeLines(priceLines(cart.lines, itemsById()).lines);
+    if (summary !== lastOverReport) {
+      lastOverReport = summary;
+      api.reportOverLimit({ surname: '', phone: '', summary, count }).catch((err) => console.warn(err));
+    }
+    return;
+  }
+  briefWait(300);
+  navigate('#info');
+});
+
+// 第二頁：缺貨偏好(不預設，必選)
+$('#sub-box').addEventListener('change', () => $('#sub-box').classList.remove('is-error'));
 
 // 查看訂單：記住菜單位置，返回時回到原處
 $('#cart-bar a').addEventListener('click', (e) => {
@@ -826,6 +855,12 @@ async function submit() {
   const surname = form.surname.value.trim();
   const title = form.elements.title.value;
   const phone = normalizePhone(form.phone.value);
+  // 缺貨偏好先檢查(在畫面最上方)
+  if (!$('#sub-box').querySelector('input[name=subPref]:checked')) {
+    $('#sub-box').classList.add('is-error');
+    $('#sub-box').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return undefined;
+  }
   if (!surname) return formError(t('order.errSurname'));
   if (!TITLES.includes(title)) return formError(t('order.errTitle'));
   if (!isValidPhone(phone)) return formError(t('order.errPhone'));
@@ -834,6 +869,7 @@ async function submit() {
   const map = itemsById();
   const count = countItems(cart.lines);
   if (!count) return formError(t('order.errEmpty'));
+  const subPref = $('#sub-box').querySelector('input[name=subPref]:checked').value;
 
   // 超過上限：自動拒絕並通知攤位收件匣
   if (count > settings.maxItemsPerOrder) {
@@ -857,7 +893,7 @@ async function submit() {
 
   try {
     const { orderId, no } = await api.submitPreorder({
-      lines: cart.lines, surname, title, phone, lang: getLang(), consentText: settingText(settings, 'consentText'),
+      lines: cart.lines, surname, title, phone, lang: getLang(), consentText: settingText(settings, 'consentText'), subPref,
     });
     const history = store.get(HISTORY_KEY, []);
     history.unshift({ orderId, no, at: Date.now() });

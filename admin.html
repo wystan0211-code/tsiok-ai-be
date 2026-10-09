@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,add_photo_alternate,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,chevron_left,chevron_right,close,content_copy,delete,done_all,download,edit,error,expand_more,fullscreen,group,image,inbox,info,language,link_off,login,logout,near_me,notifications,notifications_active,notifications_off,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,tune,tv,undo,upload,view_kanban,visibility,volume_up,warning,zoom_in,zoom_out&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,add_photo_alternate,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,check_circle,chevron_left,chevron_right,close,content_copy,delete,done_all,download,edit,error,expand_more,fullscreen,group,image,inbox,info,inventory_2,language,link_off,login,logout,near_me,notifications,notifications_active,notifications_off,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,swap_horiz,sync,timer,tune,tv,undo,upload,view_kanban,visibility,volume_up,warning,zoom_in,zoom_out&display=block">
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/components.css">
@@ -226,15 +226,21 @@
       </div>
       <div class="card stack">
         <h2 class="section-title">訂單編號</h2>
-        <p class="muted text-sm">把預點(A)與現場(B)的編號從 001 重新開始，適合在新的一天營業前使用。已存在的訂單不受影響。</p>
+        <p class="muted text-sm">把預點(A)與現場(B)的編號從 001 重新開始，適合在新的一天營業前使用。已存在的訂單不受影響；已結束訂單的電話綁定會一併清除(進行中的訂單不清除)。</p>
         <div><button id="reset-counters" class="btn btn--danger" type="button">
           <span class="material-symbols-rounded icon" aria-hidden="true">restart_alt</span>編號歸零</button></div>
       </div>
       <div class="card stack">
         <h2 class="section-title">未完成訂單</h2>
-        <p class="muted text-sm">把所有還沒結束的訂單(等待接單、製作中、可取餐，含前幾天的)一次改為「已取消」並標記作廢，適合收攤後或顧客端卡在舊訂單時使用。資料會保留，不會通知顧客。另外，建立超過 12 小時仍未結束的訂單，顧客端會自動視為失效。</p>
+        <p class="muted text-sm">把所有還沒結束的訂單(等待接單、製作中、可取餐，含前幾天的)一次改為「已取消」並標記作廢，適合收攤後或顧客端卡在舊訂單時使用。資料會保留，不會通知顧客；作廢後會一併解除這些訂單的電話綁定。另外，建立超過 12 小時仍未結束的訂單，顧客端會自動視為失效。</p>
         <div><button id="void-orders" class="btn btn--danger" type="button">
           <span class="material-symbols-rounded icon" aria-hidden="true">block</span>作廢所有未完成訂單</button></div>
+      </div>
+      <div class="card stack">
+        <h2 class="section-title">缺貨替代設定記憶</h2>
+        <p class="muted text-sm">攤位處理缺貨時設定過的替代清單會被記住，下次相同品項缺貨時自動帶入。需要重新開始時可以全部清除。</p>
+        <div><button id="clear-sub-memory" class="btn btn--danger" type="button">
+          <span class="material-symbols-rounded icon" aria-hidden="true">delete</span>清除替代設定記憶</button></div>
       </div>
       <div id="demo-reset-box" class="card stack" hidden>
         <h2 class="section-title">展示資料</h2>

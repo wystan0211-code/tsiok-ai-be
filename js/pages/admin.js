@@ -1071,6 +1071,20 @@ $('#void-orders').addEventListener('click', (e) => withBusy(e.currentTarget, asy
   }
 }));
 
+// 清除缺貨替代設定記憶
+$('#clear-sub-memory').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  if (!await confirmDialog('清除替代設定記憶', '確定要清除所有攤位設定過的替代清單嗎？之後缺貨時會重新自動建議。', { confirmLabel: '清除', danger: true })) return;
+  withBusy(btn, async () => {
+    try {
+      const n = await api.clearSubMemory();
+      toast(`已清除 ${n} 筆替代設定`, 'success');
+    } catch (err) {
+      toast(errorText(err), 'danger');
+    }
+  });
+});
+
 // 入口頁 QR code(依目前網站網址產生)
 const entryUrl = new URL('index.html', location.href).href;
 $('#entry-qr').innerHTML = qrSvg(entryUrl);
