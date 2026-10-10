@@ -13,11 +13,12 @@ const plain = (v) => {
   return t === 'integerValue' ? Number(x) : t === 'nullValue' ? null : x;
 };
 const items = await (await fetch(`${PROD}/items?pageSize=100`)).json();
-let pick = null; let pickSel = [];
+const LINES = Number(process.env.LINES || 1);
+const cands = [];
 for (const d of items.documents || []) {
   const f = Object.fromEntries(Object.entries(d.fields).map(([k, v]) => [k, plain(v)]));
-  if (pick || f.active === false || f.soldOut === true) continue;
-  if (f.stockLimit != null && (f.soldCount || 0) >= f.stockLimit) continue;
+  if (f.active === false || f.soldOut === true) continue;
+  if (f.stockLimit != null && (f.soldCount || 0) + 2 > f.stockLimit) continue;
   let groups = Array.isArray(f.optionGroups) ? f.optionGroups.filter((g) => g && g.choices?.length) : [];
   if (!groups.length && Array.isArray(f.options) && f.options.length) groups = [{ id: 'g0', kind: 'required-single', choices: f.options.map((n, i) => ({ id: `c${i}` })) }];
   const sel = []; let ok = true;
@@ -27,9 +28,12 @@ for (const d of items.documents || []) {
     if (free.length < need) { ok = false; break; }
     free.slice(0, need).forEach((c) => sel.push(`${g.id}:${c.id}`));
   }
-  if (ok) { pick = d.name.split('/').pop(); pickSel = sel; }
+  if (ok) cands.push({ id: d.name.split('/').pop(), sel, opt: groups.length > 0 });
 }
-log('pick', pick, JSON.stringify(pickSel));
+cands.sort((a, b) => Number(b.opt) - Number(a.opt));
+const lines = cands.slice(0, LINES).map((c) => ({ itemId: c.id, sel: c.sel, qty: 1 }));
+const pick = lines[0]?.itemId; const pickSel = lines[0]?.sel;
+log('lines', lines.length, 'withOptions', cands.slice(0, LINES).filter((c) => c.opt).length);
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 page.on('pageerror', (e) => log('pageerror', e.message.slice(0, 200)));
@@ -37,7 +41,7 @@ await page.goto(SITE + 'index.html');
 await page.waitForSelector('#start-btn:not([hidden])', { timeout: 30000 });
 await page.click('#start-btn');
 await page.waitForURL(/order\.html\?t=/, { timeout: 30000 });
-await page.evaluate(([id, sel]) => localStorage.setItem('tab-cart', JSON.stringify({ lines: [{ itemId: id, sel, qty: 1 }] })), [pick, pickSel]);
+await page.evaluate((ls) => localStorage.setItem('tab-cart', JSON.stringify({ lines: ls })), lines);
 await page.reload();
 await page.waitForTimeout(3000);
 await page.evaluate(() => { location.hash = '#info'; });
@@ -45,7 +49,7 @@ await page.waitForTimeout(1500);
 await page.check('#sub-box input[value=remove]', { force: true });
 await page.fill('#checkout-form [name=surname]', '測試');
 await page.check('[name=title][value="其他"]', { force: true });
-await page.fill('#checkout-form [name=phone]', '0999999999');
+await page.fill('#checkout-form [name=phone]', process.env.PHONE || '0999999999');
 await page.check('#checkout-form [name=consent]', { force: true });
 await page.click('#submit-btn');
 await page.waitForTimeout(8000);
