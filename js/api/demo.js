@@ -263,7 +263,12 @@ export const api = {
     // 圖片存在另外的位置，這裡補上
     return watch((d) => Object.values(d.banners || {})
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
-      .map((b) => ({ ...b, data: readImg(`banner:${b.id}`) }))
+      .map((b) => ({
+        ...b,
+        data: readImg(`banner:${b.id}`),
+        dataEn: readImg(`banner:${b.id}:en`) || null,
+        dataJa: readImg(`banner:${b.id}:ja`) || null,
+      }))
       .filter((b) => b.data), cb);
   },
 
@@ -691,7 +696,17 @@ export const api = {
     await delay();
     requireRole(MANAGER);
     writeImg(`banner:${id}`, null);
+    writeImg(`banner:${id}:en`, null);
+    writeImg(`banner:${id}:ja`, null);
     delete db.banners[id];
+    commit();
+  },
+
+  async setBannerLang(id, lang, dataUrl) {
+    await delay();
+    requireRole(MANAGER);
+    writeImg(`banner:${id}:${lang === 'en' ? 'en' : 'ja'}`, dataUrl || null);
+    if (db.banners[id]) db.banners[id].updatedAt = Date.now();
     commit();
   },
 

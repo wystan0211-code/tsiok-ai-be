@@ -797,6 +797,12 @@ export const api = {
     await deleteDoc(ref('banners', id));
   }),
 
+  // 英文、日文版的橫幅圖片：lang 為 'en' 或 'ja'；dataUrl 為 null 時刪除(顯示中文版)
+  setBannerLang: (id, lang, dataUrl) => guard(async () => {
+    const field = lang === 'en' ? 'dataEn' : 'dataJa';
+    await updateDoc(ref('banners', id), { [field]: dataUrl || deleteField(), updatedAt: serverTimestamp() });
+  }),
+
   reorderBanners: (ids) => guard(async () => {
     const batch = writeBatch(db);
     ids.forEach((id, i) => batch.update(ref('banners', id), { sortOrder: i + 1 }));

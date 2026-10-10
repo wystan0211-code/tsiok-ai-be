@@ -1839,8 +1839,75 @@ html[lang='en'] .radio-chip span {
   border-radius: 6px;
 }
 
-.banner-admin__row span {
+.banner-admin__row > span {
   flex: 1;
+}
+
+/* 每張橫幅：中文版一列，下方是英文、日文版 */
+.banner-admin__item {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius);
+}
+
+.banner-admin__item > .banner-admin__row {
+  border: none;
+  padding: 0 var(--space-1) 0 0;
+}
+
+.banner-admin__langs {
+  display: grid;
+  gap: var(--space-1);
+  padding-left: var(--space-5);
+}
+
+.banner-lang {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.banner-lang img,
+.banner-lang__empty {
+  width: 90px;
+  aspect-ratio: 9 / 5;
+  flex-shrink: 0;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.banner-lang__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--color-control-border);
+  text-align: center;
+}
+
+.banner-lang > .text-sm {
+  flex: 1;
+}
+
+/* 手機：縮小縮圖，讓「第 N 張」不會被擠成直排 */
+.banner-admin__row > span {
+  white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+  .banner-admin__item .banner-admin__row img {
+    width: 96px;
+  }
+
+  .banner-admin__langs {
+    padding-left: 0;
+  }
+
+  .banner-lang img,
+  .banner-lang__empty {
+    width: 72px;
+  }
 }
 
 .guide-preview {
@@ -3039,7 +3106,7 @@ body.is-viewer-open {
 
 .sub-row__hint {
   color: var(--color-text-muted);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
 }
 
 /* ===== 訂單進度頁：替代品詢問 ===== */

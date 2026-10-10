@@ -496,15 +496,30 @@ $('#item-rows').addEventListener('click', (e) => {
 });
 
 // ===== 橫幅輪播(最多 5 張) =====
+// 每張可另外上傳英文、日文版；沒有上傳的語言顯示中文版
+const BANNER_LANGS = [['en', '英文', 'dataEn'], ['ja', '日文', 'dataJa']];
 function renderBanners() {
   const box = $('#banner-list');
   box.innerHTML = banners.length ? banners.map((b, i) => `
-    <div class="banner-admin__row" data-banner="${b.id}">
-      <img src="${b.data}" alt="橫幅 ${i + 1}">
-      <span class="text-sm">第 ${i + 1} 張</span>
-      <button class="btn btn--ghost btn--icon" data-banner-act="up" ${i === 0 ? 'disabled' : ''} aria-label="上移">${icon('arrow_upward')}</button>
-      <button class="btn btn--ghost btn--icon" data-banner-act="down" ${i === banners.length - 1 ? 'disabled' : ''} aria-label="下移">${icon('arrow_downward')}</button>
-      <button class="btn btn--ghost btn--icon" data-banner-act="delete" aria-label="刪除">${icon('delete')}</button>
+    <div class="banner-admin__item" data-banner="${b.id}">
+      <div class="banner-admin__row">
+        <img src="${b.data}" alt="橫幅 ${i + 1}">
+        <span class="text-sm">第 ${i + 1} 張<span class="muted">(中文)</span></span>
+        <button class="btn btn--ghost btn--icon" data-banner-act="up" ${i === 0 ? 'disabled' : ''} aria-label="上移">${icon('arrow_upward')}</button>
+        <button class="btn btn--ghost btn--icon" data-banner-act="down" ${i === banners.length - 1 ? 'disabled' : ''} aria-label="下移">${icon('arrow_downward')}</button>
+        <button class="btn btn--ghost btn--icon" data-banner-act="delete" aria-label="刪除">${icon('delete')}</button>
+      </div>
+      <div class="banner-admin__langs">
+        ${BANNER_LANGS.map(([lang, label, field]) => `
+          <div class="banner-lang">
+            ${b[field]
+    ? `<img src="${b[field]}" alt="第 ${i + 1} 張${label}版">`
+    : '<span class="banner-lang__empty muted text-xs">使用中文版</span>'}
+            <span class="text-sm">${label}</span>
+            <button class="btn btn--sm" type="button" data-banner-act="lang" data-lang="${lang}">${icon('add_photo_alternate', 'icon--sm')}${b[field] ? '更換' : '上傳'}</button>
+            ${b[field] ? `<button class="btn btn--ghost btn--icon" type="button" data-banner-act="lang-del" data-lang="${lang}" aria-label="刪除${label}版">${icon('delete')}</button>` : ''}
+          </div>`).join('')}
+      </div>
     </div>`).join('') : '<p class="muted text-sm">尚未上傳橫幅，點餐頁不會顯示輪播。</p>';
   $('#banner-add').disabled = banners.length >= MAX_BANNERS;
 }
@@ -525,6 +540,23 @@ $('#banner-file').addEventListener('change', async (e) => {
   }
 });
 
+let langTarget = null;
+$('#banner-lang-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  const target = langTarget;
+  langTarget = null;
+  if (!file || !target) return;
+  try {
+    const out = await cropBannerImage(file);
+    if (!out) return;
+    await api.setBannerLang(target.id, target.lang, out[0]);
+    toast(`已更新${target.lang === 'en' ? '英文' : '日文'}版橫幅`, 'success');
+  } catch (err) {
+    toast(err.message && !err.code ? err.message : errorText(err), 'danger');
+  }
+});
+
 $('#banner-list').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-banner-act]');
   if (!btn) return;
@@ -533,6 +565,19 @@ $('#banner-list').addEventListener('click', (e) => {
   withBusy(btn, async () => {
     try {
       const act = btn.dataset.bannerAct;
+      const langLabel = btn.dataset.lang === 'en' ? '英文' : '日文';
+      // 上傳或更換英文、日文版(同樣 9:5 裁切)
+      if (act === 'lang') {
+        langTarget = { id, lang: btn.dataset.lang };
+        $('#banner-lang-file').click();
+        return;
+      }
+      if (act === 'lang-del') {
+        if (await confirmDialog(`刪除${langLabel}版`, `確定要刪除第 ${index + 1} 張的${langLabel}版嗎？刪除後${langLabel}介面會顯示中文版。`, { confirmLabel: '刪除', danger: true })) {
+          await api.setBannerLang(id, btn.dataset.lang, null);
+        }
+        return;
+      }
       if (act === 'delete') {
         if (await confirmDialog('刪除橫幅', `確定要刪除第 ${index + 1} 張橫幅嗎？`, { confirmLabel: '刪除', danger: true })) {
           await api.deleteBanner(id);

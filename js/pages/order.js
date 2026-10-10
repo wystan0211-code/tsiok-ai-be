@@ -200,11 +200,19 @@ const carousel = {
   programmatic: false,
 };
 
+// 橫幅圖片：英文、日文有上傳時使用該語言的版本，否則用中文版
+function bannerSrc(b) {
+  const lang = getLang();
+  if (lang === 'en' && b.dataEn) return b.dataEn;
+  if (lang === 'ja' && b.dataJa) return b.dataJa;
+  return b.data;
+}
+
 function renderCarousel() {
   const box = $('#carousel');
   box.hidden = banners.length === 0;
   const track = $('#carousel-track');
-  track.innerHTML = banners.map((b, i) => `<img class="carousel__slide" src="${b.data}" alt="" draggable="false" ${i ? 'loading="lazy"' : ''}>`).join('');
+  track.innerHTML = banners.map((b, i) => `<img class="carousel__slide" src="${bannerSrc(b)}" alt="" draggable="false" ${i ? 'loading="lazy"' : ''}>`).join('');
   $('#carousel-dots').innerHTML = banners.map(() => '<span class="carousel__dot"></span>').join('');
   box.classList.toggle('carousel--single', banners.length < 2);
   carousel.index = 0;
@@ -968,8 +976,9 @@ function startWatchers() {
     render();
   });
   api.watchBanners((list) => {
-    const key = list.map((b) => b.id).join('|');
-    const changed = key !== banners.map((b) => b.id).join('|');
+    // 順序或目前語言的圖片有變動時才重畫
+    const keyOf = (arr) => arr.map((b) => `${b.id}:${b.updatedAt || ''}:${bannerSrc(b)?.length || 0}`).join('|');
+    const changed = keyOf(list) !== keyOf(banners);
     banners = list;
     if (changed) renderCarousel();
   });
