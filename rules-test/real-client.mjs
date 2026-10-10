@@ -69,22 +69,44 @@ await page.route('**/js/api/firebase.js', async (route) => {
 });
 const B = 'http://127.0.0.1:8000/';
 process.on('unhandledRejection', (e) => { log('script error', String(e).slice(0, 300)); process.exit(0); });
-await page.goto(B + 'index.html');
-await page.waitForSelector('#start-btn:not([hidden])', { timeout: 30000 });
-await page.click('#start-btn');
-await page.waitForURL(/order\.html\?t=/, { timeout: 30000 });
-await page.evaluate(([id, sel]) => localStorage.setItem('tab-cart', JSON.stringify({ lines: [{ itemId: id, sel, qty: 1 }] })), [pick, pickSel]);
-await page.reload();
-await page.waitForTimeout(3000);
-await page.evaluate(() => { location.hash = '#info'; });
-await page.waitForTimeout(1500);
-await page.check('#sub-box input[value=remove]', { force: true });
-await page.fill('#checkout-form [name=surname]', '王');
-await page.check('[name=title][value="先生"]', { force: true });
-await page.fill('#checkout-form [name=phone]', '0900000000');
-await page.check('#checkout-form [name=consent]', { force: true });
-await page.click('#submit-btn');
-await page.waitForTimeout(6000);
-log('url', page.url());
-log('form-error', (await page.locator('#form-error').innerText().catch(() => '')).replace(/\n/g, ' '));
+
+// 依序在同一個瀏覽器(同一個匿名身分)送出多張預點；每張送出後由攤位標記為已取餐
+async function order(round, phone) {
+  await page.goto(B + 'index.html');
+  await page.waitForTimeout(2500);
+  const startVisible = await page.locator('#start-btn:not([hidden])').count();
+  if (!startVisible) { log(round, 'start 按鈕沒出現', (await page.locator('body').innerText()).slice(0, 200).replace(/\n/g, ' ')); return null; }
+  await page.click('#start-btn');
+  await page.waitForURL(/order\.html\?t=/, { timeout: 30000 });
+  await page.evaluate(([id, sel]) => localStorage.setItem('tab-cart', JSON.stringify({ lines: [{ itemId: id, sel, qty: 1 }] })), [pick, pickSel]);
+  await page.reload();
+  await page.waitForTimeout(2500);
+  await page.evaluate(() => { location.hash = '#info'; });
+  await page.waitForTimeout(1200);
+  await page.check('#sub-box input[value=remove]', { force: true });
+  await page.fill('#checkout-form [name=surname]', '王');
+  await page.check('[name=title][value="先生"]', { force: true });
+  await page.fill('#checkout-form [name=phone]', phone);
+  await page.check('#checkout-form [name=consent]', { force: true });
+  await page.click('#submit-btn');
+  await page.waitForTimeout(5000);
+  const url = page.url();
+  const m = url.match(/track\.html\?o=([^&]+)/);
+  log(round, phone, m ? `成功 ${m[1]}` : `失敗 ${(await page.locator('#form-error').innerText().catch(() => '')).replace(/\n/g, ' ')}`);
+  return m ? m[1] : null;
+}
+// 攤位標記已取餐(模擬器 owner 權限)；release=false 時保留電話綁定(模擬舊版沒有解除綁定)
+async function picked(orderId, phone, release = true) {
+  const r = await fetch(`${EMU}/orders/${orderId}?updateMask.fieldPaths=status`, { method: 'PATCH', headers: H, body: JSON.stringify({ fields: { status: { stringValue: 'picked' } } }) });
+  if (release) await fetch(`${EMU}/activePhones/${phone}`, { method: 'DELETE', headers: H });
+  log('picked', orderId, r.status);
+}
+
+const o1 = await order('第1張', '0911111111');
+if (o1) await picked(o1, '0911111111');
+const o2 = await order('第2張(新號碼)', '0922222222');
+if (o2) await picked(o2, '0922222222', false);
+const o3 = await order('第3張(第1支號碼)', '0911111111');
+if (o3) await picked(o3, '0911111111');
+const o4 = await order('第4張(綁定未解除的號碼)', '0922222222');
 await browser.close();
