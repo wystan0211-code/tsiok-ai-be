@@ -114,7 +114,7 @@ async function readItems(tx, lines) {
 //   CT-K 計數器有多餘欄位   CT-V 計數器數值不是整數
 //   LN-N 明細行數不是 1～10  LN-K 明細有多餘欄位  LN-I 品項 ID 長度不符  LN-Q 數量不是 1～50 的整數  LN-O 選項文字超過 200 字  LN-S 選擇超過 50 個
 //   NM 姓氏長度不是 1～10   TT 稱謂不符  LG 語言不符  PH 電話格式不符  CS 同意文字不是文字或超過 500 字  SP 缺貨偏好不符
-//   LK 這組編號與電話的查詢紀錄已存在(僅供參考)
+//   LK 這組編號與電話的查詢紀錄已存在(僅供參考)  L數字 購物車明細行數
 async function diagnoseSubmit({ uid, lines, surname, title, phone, consentText, lang, subPref, count }) {
   const codes = [];
   const len = (v) => [...String(v)].length;
@@ -172,8 +172,9 @@ async function diagnoseSubmit({ uid, lines, surname, title, phone, consentText, 
     console.warn('送出檢查失敗', err);
     codes.push('RD');
   }
-  // LK 只是參考資訊，不影響判斷
-  return codes.filter((c) => c !== 'LK').length ? codes : ['OK', ...codes];
+  // LK 只是參考資訊，不影響判斷；最後附上明細行數(例如 L5)
+  const lineCode = `L${lines.length}`;
+  return codes.filter((c) => c !== 'LK').length ? [...codes, lineCode] : ['OK', ...codes, lineCode];
 }
 
 // 解除電話綁定：訂單結束(取餐、拒絕、取消、作廢)後刪除該電話的綁定，失敗時不影響主要動作
@@ -795,6 +796,12 @@ export const api = {
 
   deleteBanner: (id) => guard(async () => {
     await deleteDoc(ref('banners', id));
+  }),
+
+  // 英文、日文版的橫幅圖片：lang 為 'en' 或 'ja'；dataUrl 為 null 時刪除(顯示中文版)
+  setBannerLang: (id, lang, dataUrl) => guard(async () => {
+    const field = lang === 'en' ? 'dataEn' : 'dataJa';
+    await updateDoc(ref('banners', id), { [field]: dataUrl || deleteField(), updatedAt: serverTimestamp() });
   }),
 
   reorderBanners: (ids) => guard(async () => {
