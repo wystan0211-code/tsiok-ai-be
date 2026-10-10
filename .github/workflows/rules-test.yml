@@ -27,7 +27,9 @@ jobs:
           ref: main
           path: rules-test/site
       - run: (cd site && python3 -m http.server 8000 >/dev/null 2>&1 &)
-      - run: (LINES=5 PHONE=0999999995 node prod-probe.mjs; LINES=10 PHONE=0999999910 node prod-probe.mjs) | tee probe.txt
+      # 正式環境測試會產生真的訂單，平時關閉；需要時改成 true 並說明用途
+      - if: false
+        run: (LINES=5 PHONE=0999999995 node prod-probe.mjs; LINES=10 PHONE=0999999910 node prod-probe.mjs) | tee probe.txt
       - if: always()
         run: tr '\n' ' ' < probe.txt | sed 's/^/::notice title=probe::/' || true
       - run: node prod-read.mjs | tee prod.txt
