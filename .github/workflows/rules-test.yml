@@ -27,6 +27,9 @@ jobs:
           ref: main
           path: rules-test/site
       - run: (cd site && python3 -m http.server 8000 >/dev/null 2>&1 &)
+      - run: node prod-probe.mjs | tee probe.txt
+      - if: always()
+        run: tr '\n' ' ' < probe.txt | sed 's/^/::notice title=probe::/' || true
       - run: node prod-read.mjs | tee prod.txt
       - if: always()
         run: tr '\n' ' ' < prod.txt | sed 's/^/::notice title=prod::/' || true
