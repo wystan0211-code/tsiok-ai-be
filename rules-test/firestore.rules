@@ -46,18 +46,13 @@ service cloud.firestore {
         : (seq < 100 ? prefix + '0' + string(seq) : prefix + string(seq));
     }
 
-    // 顧客送出的明細：最多 10 行，每行只有 itemId、qty、option、sel
-    // 訂單明細一列：option 為選項的中文文字(顯示用)；sel 為選擇的「群組ID:選項ID」清單(最多 5 群 × 10 項)
-    // 實際金額由攤位接單時依菜單重新計算，這裡只檢查格式與大小，避免規則運算量過大
+    // 顧客送出的明細：最多 10 行，每行只能有 itemId、qty、option、sel，數量為 1～50 的整數
+    // 正式環境對每次送出的規則運算量有上限，明細多時會被擋下，所以每行只做最必要的檢查
+    // (品項、選項文字等不在這裡檢查；實際金額與庫存由攤位接單時依菜單重新計算)
     function lineOk(items, i) {
       return items.size() <= i || (
-        items[i] is map
-        && items[i].keys().hasOnly(['itemId', 'qty', 'option', 'sel'])
-        && items[i].itemId is string && items[i].itemId.size() > 0 && items[i].itemId.size() <= 64
+        items[i].keys().hasOnly(['itemId', 'qty', 'option', 'sel'])
         && items[i].qty is int && items[i].qty >= 1 && items[i].qty <= 50
-        && (!('option' in items[i]) || items[i].option == null
-            || (items[i].option is string && items[i].option.size() <= 200))
-        && (!('sel' in items[i]) || (items[i].sel is list && items[i].sel.size() <= 50))
       );
     }
     function linesOk(items) {

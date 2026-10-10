@@ -77,4 +77,7 @@ await run('店員帳號登入中', { uid: 'staff1', staffRole: 'staff' });
 await run('計數器數值為小數 0.0', { counterDouble: true });
 await run('數量上限為小數 10.0', { maxDouble: true });
 await run('多行明細含選項', { items: [{ itemId: 'cake', qty: 2, option: '糖粉', sel: ['g0:c1'] }, { itemId: 'cake', qty: 1, option: null }] });
+await run('10 行明細含選項', { items: Array.from({ length: 10 }, (_, i) => ({ itemId: 'cake', qty: 1, option: '糖粉'.repeat(i + 1), sel: ['g0:c1', 'g1:c2'] })) });
+await run('不允許：明細有多餘欄位(應失敗)', { items: [{ itemId: 'cake', qty: 1, option: null, price: 0 }] });
+await run('不允許：數量 0(應失敗)', { items: [{ itemId: 'cake', qty: 0, option: null }] });
 await env.cleanup();

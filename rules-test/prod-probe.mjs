@@ -31,7 +31,8 @@ for (const d of items.documents || []) {
   if (ok) cands.push({ id: d.name.split('/').pop(), sel, opt: groups.length > 0 });
 }
 cands.sort((a, b) => Number(b.opt) - Number(a.opt));
-const lines = cands.slice(0, LINES).map((c) => ({ itemId: c.id, sel: c.sel, qty: 1 }));
+// 品項不夠時重複使用(同品項可以是不同的明細行)
+const lines = Array.from({ length: LINES }, (_, i) => cands[i % cands.length]).map((c) => ({ itemId: c.id, sel: c.sel, qty: 1 }));
 const pick = lines[0]?.itemId; const pickSel = lines[0]?.sel;
 log('lines', lines.length, 'withOptions', cands.slice(0, LINES).filter((c) => c.opt).length);
 const browser = await chromium.launch();
