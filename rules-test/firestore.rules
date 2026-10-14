@@ -18,23 +18,31 @@ service cloud.firestore {
     function userPath() { return path('users', request.auth.uid); }
 
     // 員工資料存在 users/{uid}，停用的帳號沒有任何權限
+    // 只讀取一次 users 文件(規則讀取次數有上限)
+    function roleOk(u, roles) { return u.disabled == false && u.role in roles; }
     function hasRole(roles) {
-      return signedIn()
-        && exists(userPath())
-        && get(userPath()).data.disabled == false
-        && get(userPath()).data.role in roles;
+      return signedIn() && exists(userPath()) && roleOk(get(userPath()).data, roles);
     }
     function isStaff() { return isAdmin() || hasRole(['staff', 'manager']); }
     function isManager() { return isAdmin() || hasRole(['manager']); }
+    // 預購主管：只看預購單(C)、標示付款；管理員也有這個權限
+    function isPresaleMgr() { return isAdmin() || hasRole(['presale']); }
 
     // ===== 共用 =====
     function onlyChanged(keys) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
     }
+    // 預購單超過付款期限仍未付款：作廢(付款期限 = 退回時間或建立時間 + payHours 小時)
+    function presaleVoid(o) {
+      return o.get('type', '') == 'presale' && o.status == 'pending'
+        && request.time > o.get('payFrom', o.get('createdAt', request.time)) + duration.value(o.get('payHours', 12), 'h');
+    }
     // 訂單已結束：已取餐、已拒絕、已取消、已刪除，或建立超過 12 小時(與 js/core/order-logic.js 的 ORDER_TTL_MS 相同)
+    // 預購單不套用 12 小時，改用付款期限(活動當天才取餐)
     function finalStatus(o) {
       return o.status in ['picked', 'rejected', 'cancelled'] || o.get('deleted', false) == true
-        || request.time > o.get('createdAt', request.time) + duration.value(12, 'h');
+        || (o.get('type', '') != 'presale' && request.time > o.get('createdAt', request.time) + duration.value(12, 'h'))
+        || presaleVoid(o);
     }
     // 訂單已結束，或已不存在(例如在主控台被刪除)：綁定的電話與點餐連結可以重新使用
     function orderDone(orderId) {
@@ -67,13 +75,14 @@ service cloud.firestore {
         + qtyAt(items, 5) + qtyAt(items, 6) + qtyAt(items, 7) + qtyAt(items, 8) + qtyAt(items, 9);
     }
 
-    // ===== 營業設定：所有人可讀；攤位主管可改；店員只能切換「接受預點」 =====
+    // ===== 營業設定：所有人可讀；攤位主管可改(含平台模式)；預購主管只能改預購付款期限 =====
     match /settings/{docId} {
       allow read: if true;
       allow create: if isManager();
       allow update: if isManager()
-        || (isStaff() && onlyChanged(['acceptingPreorders', 'updatedAt'])
-            && request.resource.data.acceptingPreorders is bool);
+        || (isPresaleMgr() && onlyChanged(['presalePayHours', 'updatedAt'])
+            && request.resource.data.presalePayHours is int
+            && request.resource.data.presalePayHours >= 1 && request.resource.data.presalePayHours <= 48);
       allow delete: if isAdmin();
     }
 
@@ -123,7 +132,8 @@ service cloud.firestore {
         && d.value == prevCounter() + 1
         && o.seq == d.value
         && ((type == 'A' && o.type == 'preorder' && o.uid == uid())
-            || (type == 'B' && o.type == 'walkin' && isStaff()));
+            || (type == 'B' && o.type == 'walkin' && isStaff())
+            || (type == 'C' && o.type == 'presale' && o.uid == uid()));
     }
     match /counters/{type} {
       allow get: if signedIn();
@@ -176,6 +186,33 @@ service cloud.firestore {
         && s.used == false && sAfter.used == true && sAfter.orderId == orderId
         && existsAfter(path('contacts', orderId));
     }
+    // 預購單(C)：預購模式開啟時才能送出；全名至少 2 字、稱謂老師／主任／其他、取餐時段、付款期限
+    // 時段名額在標示付款時才占用，這裡不檢查
+    function presaleChecks(orderId) {
+      let d = request.resource.data;
+      let s = get(path('sessions', uid())).data;
+      let sAfter = getAfter(path('sessions', uid())).data;
+      let c = getAfter(path('counters', 'C')).data;
+      let settings = get(path('settings', 'app')).data;
+      let maxItems = settings.get('presaleMaxItems', null);
+      let payHours = settings.get('presalePayHours', null);
+      return d.keys().hasOnly(['type', 'seq', 'no', 'status', 'uid', 'items', 'itemCount', 'surname', 'title',
+                               'lang', 'pushEnabled', 'slotId', 'payHours', 'paid', 'createdAt', 'updatedAt'])
+        && d.uid == uid() && d.status == 'pending' && d.pushEnabled == false && d.paid == false
+        && d.get('lang', 'zh-Hant') in ['zh-Hant', 'en', 'ja']
+        && d.surname is string && d.surname.size() >= 2 && d.surname.size() <= 10
+        && d.title in ['老師', '主任', '其他']
+        && d.slotId is string && d.slotId.size() >= 1 && d.slotId.size() <= 40
+        && d.payHours == (payHours == null ? 12 : payHours)
+        && linesOk(d.items) && d.itemCount == sumQty(d.items) && d.itemCount >= 1
+        && settings.get('orderMode', '') == 'presale'
+        && (maxItems == null || maxItems == 0 || d.itemCount <= maxItems)
+        && d.createdAt == request.time && d.updatedAt == request.time
+        && d.seq is int && c.value == d.seq && c.lastOrderId == orderId
+        && d.no == fmtNo('C', d.seq)
+        && s.used == false && sAfter.used == true && sAfter.orderId == orderId
+        && existsAfter(path('contacts', orderId));
+    }
     function walkinChecks(orderId) {
       let d = request.resource.data;
       let c = getAfter(path('counters', 'B')).data;
@@ -191,7 +228,24 @@ service cloud.firestore {
         && d.get('uid', null) == o.get('uid', null)
         && d.get('deleted', false) == o.get('deleted', false)
         && d.status in ['pending', 'accepted', 'ready', 'picked', 'rejected', 'cancelled']
-        && d.updatedAt == request.time;
+        && d.updatedAt == request.time
+        // 預購單：付款狀態只能由預購主管改；未付款時店員不能操作
+        && d.get('paid', false) == o.get('paid', false)
+        && (o.get('type', '') != 'presale' || o.get('paid', false) == true);
+    }
+    // 預購主管：標示已付款(請付款 → 已接單)或退回未付款(已接單 → 請付款，重新計算付款期限)
+    function presaleMgrUpdateOk() {
+      let d = request.resource.data;
+      let o = resource.data;
+      return o.get('type', '') == 'presale'
+        && d.type == o.type && d.seq == o.seq && d.no == o.no && d.uid == o.uid
+        && d.updatedAt == request.time
+        && onlyChanged(['status', 'paid', 'paidAt', 'payFrom', 'payHours', 'slotId', 'slotChanged',
+                        'lines', 'total', 'acceptedAt', 'establishedAt', 'updatedAt'])
+        && ((o.status == 'pending' && d.status == 'accepted' && d.paid == true)
+          || (o.status == 'accepted' && d.status == 'pending' && d.paid == false
+              && d.payFrom == request.time && d.payHours is int && d.payHours >= 1 && d.payHours <= 48))
+        && isPresaleMgr();
     }
     function customerUpdateOk() {
       let d = request.resource.data;
@@ -215,13 +269,15 @@ service cloud.firestore {
     match /orders/{orderId} {
       // 訂單 ID 是隨機長字串，持有連結者才能讀取單筆；查詢清單只限員工
       allow get: if signedIn();
-      allow list: if isStaff();
+      // 預購主管查詢時必須加上 type == 'presale' 條件
+      allow list: if isStaff() || (isPresaleMgr() && resource.data.type == 'presale');
       allow create: if signedIn() && (
         (request.resource.data.type == 'preorder' && preorderChecks(orderId))
         || (request.resource.data.type == 'walkin' && isStaff() && walkinChecks(orderId))
+        || (request.resource.data.type == 'presale' && presaleChecks(orderId))
         || (request.resource.data.type == 'manual' && isAdmin())
       );
-      allow update: if isAdmin() || staffUpdateOk() || customerUpdateOk();
+      allow update: if isAdmin() || presaleMgrUpdateOk() || staffUpdateOk() || customerUpdateOk();
       allow delete: if isAdmin();
     }
 
@@ -238,7 +294,7 @@ service cloud.firestore {
         && getAfter(path('activePhones', d.phone)).data.orderId == orderId;
     }
     match /contacts/{orderId} {
-      allow get: if isStaff() || (signedIn() && get(path('orders', orderId)).data.get('uid', null) == uid());
+      allow get: if isStaff() || isPresaleMgr() || (signedIn() && get(path('orders', orderId)).data.get('uid', null) == uid());
       allow list: if isStaff();
       allow create: if signedIn() && (
         contactPreorderOk(orderId)
@@ -263,6 +319,16 @@ service cloud.firestore {
       allow update: if phoneLockOk(phone) && orderDone(resource.data.orderId);
       // 訂單結束(取餐、拒絕、取消、作廢)時，攤位可以解除綁定
       allow delete: if isAdmin() || (isStaff() && orderDone(resource.data.orderId));
+    }
+
+    // ===== 預購統計(單一文件 presaleStats/main)：slots 各時段已付款數、sold 各品項已付款的預購數量 =====
+    // 所有人可讀(顧客端隱藏額滿時段與顯示剩餘數量)；預購主管標示付款時更新，管理員重設
+    match /presaleStats/{docId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasOnly(['slots', 'sold', 'updatedAt'])
+        && request.resource.data.slots is map && request.resource.data.sold is map
+        && isPresaleMgr();
+      allow delete: if isAdmin();
     }
 
     // ===== 缺貨替代設定記憶：攤位人員共用 =====

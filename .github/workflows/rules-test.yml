@@ -35,6 +35,9 @@ jobs:
       - run: node prod-read.mjs | tee prod.txt
       - if: always()
         run: tr '\n' ' ' < prod.txt | sed 's/^/::notice title=prod::/' || true
+      - run: npx firebase emulators:exec --only firestore --project demo-tsiok "node presale.mjs" | tee presale.txt
+      - if: always()
+        run: grep '^\[' presale.txt | tr '\n' ' ' | sed 's/^/::notice title=presale::/' || true
       - run: npx firebase emulators:exec --only firestore,auth --project demo-tsiok "node real-client.mjs" | tee real.txt
       - if: always()
         run: grep '^\[real\]' real.txt | tr '\n' ' ' | sed 's/^/::notice title=real::/' || true
