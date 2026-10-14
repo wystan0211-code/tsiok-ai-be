@@ -7,9 +7,11 @@ import {
 } from '../core/ui.js';
 import { errorText } from '../core/errors.js';
 import { store } from '../core/storage.js';
-import { escapeHtml, money, personName, TITLES } from '../core/format.js';
+import { escapeHtml, money, personName, TITLES, PRESALE_TITLES } from '../core/format.js';
 import {
   countItems, priceLines, stockIssues, summarizeLines, normalizePhone, isValidPhone,
+  orderMode, visibleIn, presaleLeft, presaleIssues, groupSlots, slotDateLabel, slotTime, slotLabel, slotLeft,
+  PRESALE_PAY_HOURS,
 } from '../core/order-logic.js';
 import { goTo, pageReady, briefWait } from '../core/transition.js';
 import {
@@ -31,9 +33,13 @@ const token = new URLSearchParams(location.search).get('t') || '';
 const AUTOPLAY_MS = 5000; // 橫幅每 5 秒換一張，使用者操作後 5 秒沒有動作才繼續
 
 let settings = null;
-let menu = [];
+let menu = [];          // 目前模式顯示的品項
+let allMenu = [];       // 全部上架品項
 let categories = [];
-let banners = [];
+let banners = [];       // 目前模式顯示的橫幅
+let allBanners = [];
+let presaleStats = { slots: {}, sold: {} }; // 預購：各時段已付款數、各品項已付款數量
+let slotId = '';        // 預購：選擇的取餐時段
 let covers = {}; // 品項封面小圖
 let cart = store.get(CART_KEY, { lines: [] });
 let ready = false;
@@ -41,7 +47,28 @@ let pushedFromMenu = false; // 詳細頁或確認訂單是否由菜單點進來(
 let menuScrollY = 0;
 
 const itemsById = () => Object.fromEntries(menu.map((i) => [i.id, i]));
-const stockLeft = (item) => (item.stockLimit != null ? Math.max(0, item.stockLimit - (item.soldCount || 0)) : null);
+// 平台模式：off 關閉 / presale 預購 / open 點餐
+const mode = () => orderMode(settings);
+const isPresaleMode = () => mode() === 'presale';
+// 剩餘數量：預購模式用預購上限，一般點餐用庫存上限
+const stockLeft = (item) => {
+  if (isPresaleMode()) return presaleLeft(item, presaleStats.sold);
+  return item.stockLimit != null ? Math.max(0, item.stockLimit - (item.soldCount || 0)) : null;
+};
+
+// 依模式篩選品項與橫幅(「一般點餐顯示」「預購模式顯示」)
+let appliedMode = '';
+function applyMode() {
+  const m = mode();
+  menu = allMenu.filter((i) => visibleIn(i, m));
+  const prevBanners = banners.map((b) => b.id).join('|');
+  banners = allBanners.filter((b) => visibleIn(b, m));
+  if (m !== appliedMode || prevBanners !== banners.map((b) => b.id).join('|')) {
+    appliedMode = m;
+    renderCarousel();
+    applyFormMode();
+  }
+}
 // 售完：手動標示、數量用完，或必填群組的選項全部售完
 const isSoldOut = (item) => item.soldOut || stockLeft(item) === 0 || blockedByOptions(item);
 
@@ -118,7 +145,7 @@ function navigate(hash) {
 let lastViewKey = '';
 function render() {
   if (!ready || !settings) return;
-  if (!settings.acceptingPreorders) {
+  if (mode() === 'off') {
     showState('closed');
     pageReady();
     return;
@@ -164,8 +191,10 @@ window.addEventListener('hashchange', () => {
 let marqueeText = '';
 function renderMarquee(show) {
   const box = $('#marquee');
-  const text = settingText(settings, 'bannerText');
-  box.hidden = !(show && settings.bannerActive && text);
+  // 預購模式使用另一段跑馬燈文字
+  const presale = isPresaleMode();
+  const text = settingText(settings, presale ? 'presaleBannerText' : 'bannerText');
+  box.hidden = !(show && (presale ? settings.presaleBannerActive : settings.bannerActive) && text);
   if (box.hidden || text === marqueeText) return;
   marqueeText = text;
   requestAnimationFrame(() => layoutMarquee(box, text));
@@ -765,7 +794,7 @@ function stickyTop() {
 function renderCheckout() {
   const map = itemsById();
   const priced = priceLines(cart.lines, map);
-  const max = settings.maxItemsPerOrder;
+  const max = maxItems();
   const count = countItems(cart.lines);
   $('#cart-lines').innerHTML = cart.lines.map((l, i) => {
     const item = map[l.itemId];
@@ -795,10 +824,76 @@ function renderCheckout() {
   const over = count > max;
   const warn = $('#limit-warning');
   warn.hidden = !over;
-  warn.innerHTML = `${icon('warning')}<p>${t('order.limitMax', { n: max })}</p>`;
+  warn.innerHTML = `${icon('warning')}<p>${t(isPresaleMode() ? 'order.limitMaxPresale' : 'order.limitMax', { n: max })}</p>`;
   $('#continue-btn').classList.toggle('is-faded', over);
   $('#submit-btn').classList.toggle('is-faded', over);
-  $('#consent-text').textContent = settingText(settings, 'consentText');
+  // 付款說明：預購模式「請於 N 小時內以現金或園遊券向 林敏君老師 付款」
+  $('#pay-note').textContent = isPresaleMode()
+    ? t('order.payNotePresale', { h: payHours(), t: settingText(settings, 'presaleTeacher') })
+    : t('order.payNote');
+  $('#consent-text').textContent = settingText(settings, isPresaleMode() ? 'presaleConsentText' : 'consentText');
+  if (isPresaleMode()) renderSlots();
+}
+
+// 單筆上限：預購模式用「每張預購單最多幾件」(空白為不限制)
+function maxItems() {
+  if (isPresaleMode()) return Number(settings.presaleMaxItems) || Infinity;
+  return settings.maxItemsPerOrder;
+}
+const payHours = () => Number(settings.presalePayHours) || PRESALE_PAY_HOURS;
+
+// ===== 預購：取餐時段(收合清單；收起時只顯示目前的選擇) =====
+function availableSlots() {
+  return (settings.presaleSlots || []).filter((s) => slotLeft(s, presaleStats.slots) > 0);
+}
+
+function renderSlots() {
+  const list = availableSlots();
+  // 已選的時段額滿或被刪除：清除選擇
+  if (slotId && !list.some((s) => s.id === slotId)) slotId = '';
+  const current = list.find((s) => s.id === slotId);
+  $('#slot-current').textContent = current ? slotLabel(current, getLang()) : t(list.length ? 'slot.placeholder' : 'slot.none');
+  $('#slot-current').classList.toggle('muted', !current);
+  $('#slot-toggle').disabled = !list.length;
+  $('#slot-list').innerHTML = groupSlots(list).map((g) => `
+    <p class="slot-list__date">${escapeHtml(slotDateLabel(g.date, getLang()))}</p>
+    <div class="radio-group">
+      ${g.slots.map((s) => `<label class="radio-chip"><input type="radio" name="slot" value="${escapeHtml(s.id)}" ${s.id === slotId ? 'checked' : ''}><span>${escapeHtml(slotTime(s))}</span></label>`).join('')}
+    </div>`).join('');
+}
+
+function toggleSlots(open) {
+  $('#slot-list').hidden = !open;
+  $('#slot-toggle').setAttribute('aria-expanded', String(open));
+  $('#slot-box').classList.toggle('is-open', open);
+}
+$('#slot-toggle').addEventListener('click', () => toggleSlots($('#slot-list').hidden));
+$('#slot-list').addEventListener('change', (e) => {
+  if (e.target.name !== 'slot') return;
+  slotId = e.target.value;
+  store.set(FORM_KEY, { ...store.get(FORM_KEY, {}), slotId });
+  $('#slot-box').classList.remove('is-error');
+  renderSlots();
+  toggleSlots(false);
+});
+
+// 第二頁依模式切換：預購模式隱藏缺貨偏好、填全名、稱謂老師／主任／其他、顯示取餐時間
+function applyFormMode() {
+  if (!settings) return;
+  const presale = isPresaleMode();
+  $('#sub-box').hidden = presale;
+  $('#slot-box').hidden = !presale;
+  const label = $('#name-label');
+  label.dataset.i18n = presale ? 'order.fullName' : 'order.surname';
+  label.textContent = t(label.dataset.i18n);
+  form.surname.classList.toggle('input--fullname', presale);
+  form.surname.autocomplete = presale ? 'name' : 'family-name';
+  const d = store.get(FORM_KEY, {});
+  form.surname.value = (presale ? d.fullName : d.surname) || '';
+  const titles = presale ? PRESALE_TITLES : TITLES;
+  const chosen = presale ? d.presaleTitle : d.title;
+  $('#title-chips').innerHTML = titles.map((v, i) => `<label class="radio-chip"><input type="radio" name="title" value="${v}" ${i === 0 ? 'required' : ''} ${v === chosen ? 'checked' : ''}><span>${escapeHtml(t(`title.${v}`))}</span></label>`).join('');
+  if (presale && d.slotId) slotId = d.slotId;
 }
 
 $('#view-checkout').addEventListener('click', (e) => {
@@ -812,9 +907,10 @@ $('#view-checkout').addEventListener('click', (e) => {
 let lastOverReport = '';
 $('#continue-btn').addEventListener('click', async () => {
   const count = countItems(cart.lines);
-  if (count > settings.maxItemsPerOrder) {
+  if (count > maxItems()) {
     const warn = $('#limit-warning');
     warn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (isPresaleMode()) return; // 預購不通知攤位收件匣
     const summary = summarizeLines(priceLines(cart.lines, itemsById()).lines);
     if (summary !== lastOverReport) {
       lastOverReport = summary;
@@ -838,12 +934,14 @@ $('#cart-bar a').addEventListener('click', (e) => {
 
 // 表單草稿存在本機，重新整理不會消失
 const form = $('#checkout-form');
-const draft = store.get(FORM_KEY, {});
-form.surname.value = draft.surname || '';
-form.phone.value = draft.phone || '';
-if (TITLES.includes(draft.title)) form.querySelector(`[name=title][value="${draft.title}"]`).checked = true;
+form.phone.value = store.get(FORM_KEY, {}).phone || '';
+// 一般點餐與預購的姓名、稱謂分開保存
 form.addEventListener('input', () => {
-  store.set(FORM_KEY, { surname: form.surname.value, title: form.elements.title.value, phone: form.phone.value });
+  const d = store.get(FORM_KEY, {});
+  if (isPresaleMode()) Object.assign(d, { fullName: form.surname.value, presaleTitle: form.elements.title.value });
+  else Object.assign(d, { surname: form.surname.value, title: form.elements.title.value });
+  d.phone = form.phone.value;
+  store.set(FORM_KEY, d);
 });
 
 // 取餐聯絡資料的欄位檢查：標示沒填的欄位並捲到聯絡資料區塊
@@ -890,6 +988,7 @@ async function submit() {
   const surname = form.surname.value.trim();
   const title = form.elements.title.value;
   const phone = normalizePhone(form.phone.value);
+  if (isPresaleMode()) return submitPresale(surname, title, phone);
   // 缺貨偏好先檢查(在畫面最上方)
   if (!$('#sub-box').querySelector('input[name=subPref]:checked')) {
     $('#sub-box').classList.add('is-error');
@@ -910,7 +1009,7 @@ async function submit() {
   const subPref = $('#sub-box').querySelector('input[name=subPref]:checked').value;
 
   // 超過上限：自動拒絕並通知攤位收件匣
-  if (count > settings.maxItemsPerOrder) {
+  if (count > maxItems()) {
     const summary = summarizeLines(priceLines(cart.lines, map).lines);
     try {
       await api.reportOverLimit({ surname: personName(surname, title), phone, summary, count });
@@ -932,6 +1031,52 @@ async function submit() {
   try {
     const { orderId, no } = await api.submitPreorder({
       lines: cart.lines, surname, title, phone, lang: getLang(), consentText: settingText(settings, 'consentText'), subPref,
+    });
+    const history = store.get(HISTORY_KEY, []);
+    history.unshift({ orderId, no, at: Date.now() });
+    store.set(HISTORY_KEY, history.slice(0, 10));
+    cart = { lines: [] };
+    store.set(CART_KEY, cart);
+    goTo(`track.html?o=${encodeURIComponent(orderId)}&new=1`, { replace: true });
+  } catch (err) {
+    formError(errorText(err), err?.diag || '');
+  }
+  return undefined;
+}
+
+// 預購送出：全名至少 2 字、稱謂老師／主任／其他、取餐時段必選
+async function submitPresale(fullName, title, phone) {
+  const invalid = [];
+  if ([...fullName].length < 2) invalid.push(form.surname);
+  if (!PRESALE_TITLES.includes(title)) invalid.push(form.querySelector('.name-row__title'));
+  if (!isValidPhone(phone)) invalid.push(form.phone);
+  if (!form.consent.checked) invalid.push(form.querySelector('.check'));
+  const noSlot = !slotId || !availableSlots().some((s) => s.id === slotId);
+  if (noSlot) $('#slot-box').classList.add('is-error');
+  if (invalid.length) return markInvalid(invalid);
+  if (noSlot) {
+    $('#slot-box').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return undefined;
+  }
+  const map = itemsById();
+  const count = countItems(cart.lines);
+  if (!count) return formError(t('order.errEmpty'));
+  if (count > maxItems()) return formError(t('order.limitMaxPresale', { n: maxItems() }));
+  // 預購不檢查現場庫存數量，只檢查下架、售完與預購上限
+  const issues = [
+    ...stockIssues(cart.lines, map).filter((x) => x.kind !== 'short'),
+    ...presaleIssues(cart.lines, map, presaleStats.sold).map((x) => ({ ...x, kind: 'short' })),
+  ];
+  if (issues.length) {
+    const list = issues.map(({ item, kind, left }) => (kind === 'deleted'
+      ? t('stock.deleted')
+      : t(`stock.${kind}`, { name: itemText(item).name, n: left }))).join(getLang() === 'en' ? ', ' : '、');
+    return formError(t('order.unavailable', { list }));
+  }
+  try {
+    const { orderId, no } = await api.submitPresale({
+      lines: cart.lines, surname: fullName, title, phone, lang: getLang(),
+      consentText: settingText(settings, 'presaleConsentText'), slotId,
     });
     const history = store.get(HISTORY_KEY, []);
     history.unshift({ orderId, no, at: Date.now() });
@@ -985,7 +1130,13 @@ async function init() {
 function startWatchers() {
   api.watchSettings((s) => {
     settings = s;
+    applyMode();
+    saveCart();
     render();
+  });
+  api.watchPresaleStats((st) => {
+    presaleStats = st;
+    if (settings && isPresaleMode()) render();
   });
   api.watchCategories((list) => {
     categories = list;
@@ -994,13 +1145,16 @@ function startWatchers() {
   api.watchBanners((list) => {
     // 順序或目前語言的圖片有變動時才重畫
     const keyOf = (arr) => arr.map((b) => `${b.id}:${b.updatedAt || ''}:${bannerSrc(b)?.length || 0}`).join('|');
-    const changed = keyOf(list) !== keyOf(banners);
-    banners = list;
+    allBanners = list;
+    const next = settings ? list.filter((b) => visibleIn(b, mode())) : [];
+    const changed = keyOf(next) !== keyOf(banners);
+    banners = next;
     if (changed) renderCarousel();
   });
   let lastImageKey = '';
   api.watchMenu((items) => {
-    menu = items;
+    allMenu = items;
+    if (settings) applyMode();
     saveCart();
     render();
     const key = items.map((i) => `${i.id}:${(i.images || []).join(',')}:${i.imageVersion || 0}`).join('|');

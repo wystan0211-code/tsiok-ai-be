@@ -7,10 +7,11 @@ import { errorText } from '../core/errors.js';
 import { requireStaff, hasRole } from '../core/guard.js';
 import {
   escapeHtml, money, dateTime, toDateInput, fromDateInput, personName,
-  STATUS_LABEL, TYPE_LABEL, ROLE_LABEL,
+  STATUS_LABEL, TYPE_LABEL, ROLE_LABEL, statusLabel,
 } from '../core/format.js';
 import {
   displayLines, isPaid, lineLabel, summarizeLines, isFinal, isExpired, normalizePhone, isValidPhone,
+  isPresaleVoid, orderMode, PRESALE_PAY_HOURS, PRESALE_MAX_PAY_HOURS,
 } from '../core/order-logic.js';
 import { compressImage } from '../core/image.js';
 import { cropItemImage, cropBannerImage } from '../core/cropper.js';
@@ -157,6 +158,8 @@ function renderItems() {
       it.soldOut ? '<span class="badge badge--danger">售完</span>' : '',
       !it.soldOut && blockedByOptions(it) ? '<span class="badge badge--danger" title="必填群組的選項全部售完">選項售完</span>' : '',
       it.featured ? '<span class="badge badge--primary">推薦</span>' : '',
+      it.showPresale === true ? '<span class="badge">預購</span>' : '',
+      it.showNormal === false ? '<span class="badge">一般點餐不顯示</span>' : '',
     ].join(' ');
     const count = itemImageRefs(it).length;
     const thumb = images[it.id]
@@ -392,6 +395,10 @@ async function editItem(item) {
         <label class="field" style="flex:1"><span class="field__label">已售數量</span>
           <input class="input" name="soldCount" type="number" min="0" step="1" value="${it.soldCount || 0}"></label>
       </div>
+      <label class="field"><span class="field__label">預購期間數量上限(留空為不限；只計算已付款的預購單)</span>
+        <input class="input" name="presaleLimit" type="number" min="0" step="1" value="${it.presaleLimit ?? ''}"></label>
+      <label class="switch"><input type="checkbox" name="showNormal" ${it.showNormal !== false ? 'checked' : ''}><span>一般點餐顯示</span></label>
+      <label class="switch"><input type="checkbox" name="showPresale" ${it.showPresale === true ? 'checked' : ''}><span>預購模式顯示</span></label>
       <label class="switch"><input type="checkbox" name="active" ${it.active ? 'checked' : ''}><span>上架</span></label>
       <label class="switch"><input type="checkbox" name="soldOut" ${it.soldOut ? 'checked' : ''}><span>標示售完</span></label>
       <label class="switch"><input type="checkbox" name="featured" ${it.featured ? 'checked' : ''} ${canFeature ? '' : 'disabled'}><span>顯示在推薦區${canFeature ? '' : `(已達 ${MAX_FEATURED} 個上限)`}</span></label>
@@ -412,6 +419,7 @@ async function editItem(item) {
   });
   if (value !== 'save') return;
   const stockRaw = String(data.get('stockLimit') || '').trim();
+  const presaleRaw = String(data.get('presaleLimit') || '').trim();
   const payload = {
     name: String(data.get('name')).trim(),
     price: Math.max(0, Math.round(Number(data.get('price')) || 0)),
@@ -423,6 +431,9 @@ async function editItem(item) {
     categoryId: data.get('categoryId') || null,
     stockLimit: stockRaw === '' ? null : Math.max(0, Math.round(Number(stockRaw))),
     soldCount: Math.max(0, Math.round(Number(data.get('soldCount')) || 0)),
+    presaleLimit: presaleRaw === '' ? null : Math.max(0, Math.round(Number(presaleRaw))),
+    showNormal: data.get('showNormal') === 'on',
+    showPresale: data.get('showPresale') === 'on',
     active: data.get('active') === 'on',
     soldOut: data.get('soldOut') === 'on',
     featured: data.get('featured') === 'on',
@@ -509,6 +520,10 @@ function renderBanners() {
         <button class="btn btn--ghost btn--icon" data-banner-act="down" ${i === banners.length - 1 ? 'disabled' : ''} aria-label="下移">${icon('arrow_downward')}</button>
         <button class="btn btn--ghost btn--icon" data-banner-act="delete" aria-label="刪除">${icon('delete')}</button>
       </div>
+      <div class="banner-admin__modes">
+        <label class="switch text-sm"><input type="checkbox" data-banner-flag="showNormal" ${b.showNormal !== false ? 'checked' : ''}><span>一般點餐顯示</span></label>
+        <label class="switch text-sm"><input type="checkbox" data-banner-flag="showPresale" ${b.showPresale === true ? 'checked' : ''}><span>預購模式顯示</span></label>
+      </div>
       <div class="banner-admin__langs">
         ${BANNER_LANGS.map(([lang, label, field]) => `
           <div class="banner-lang">
@@ -537,6 +552,20 @@ $('#banner-file').addEventListener('change', async (e) => {
     toast('已新增橫幅', 'success');
   } catch (err) {
     toast(err.message && !err.code ? err.message : errorText(err), 'danger');
+  }
+});
+
+// 橫幅的顯示模式(一般點餐 / 預購)
+$('#banner-list').addEventListener('change', async (e) => {
+  const input = e.target.closest('[data-banner-flag]');
+  if (!input) return;
+  const id = input.closest('[data-banner]').dataset.banner;
+  try {
+    await api.setBannerFlags(id, { [input.dataset.bannerFlag]: input.checked });
+    toast('已更新橫幅顯示設定', 'success');
+  } catch (err) {
+    input.checked = !input.checked;
+    toast(errorText(err), 'danger');
   }
 });
 
@@ -603,7 +632,16 @@ function fillSettings() {
   }
   f.bannerActive.checked = !!settings.bannerActive;
   f.bannerText.value = settings.bannerText || '';
-  f.acceptingPreorders.checked = !!settings.acceptingPreorders;
+  f.presaleBannerActive.checked = !!settings.presaleBannerActive;
+  f.presaleBannerText.value = settings.presaleBannerText || '';
+  const om = f.querySelector(`[name=orderMode][value="${orderMode(settings)}"]`);
+  if (om) om.checked = true;
+  f.presaleTeacher.value = settings.presaleTeacher || '';
+  f.presalePayHours.value = Number(settings.presalePayHours) || PRESALE_PAY_HOURS;
+  f.presaleMaxItems.value = settings.presaleMaxItems || '';
+  f.presaleConsentText.value = settings.presaleConsentText || '';
+  slotDraft = (settings.presaleSlots || []).map((x) => ({ ...x }));
+  renderSlotEditor();
   f.showStockLeft.checked = settings.showStockLeft !== false;
   f.maxItemsPerOrder.value = settings.maxItemsPerOrder;
   f.pickupReminderMinutes.value = settings.pickupReminderMinutes;
@@ -620,6 +658,7 @@ function fillSettings() {
   for (const [lang] of TR_LANGS) {
     const tr = settings.i18n?.[lang] || {};
     f[`tr_${lang}_bannerText`].value = tr.bannerText || '';
+    for (const k of ['presaleBannerText', 'presaleTeacher', 'presaleConsentText']) f[`tr_${lang}_${k}`].value = tr[k] || '';
     f[`tr_${lang}_consentText`].value = tr.consentText || '';
     f[`tr_${lang}_messageTemplates`].value = (tr.messageTemplates || []).join('\n');
     f[`tr_${lang}_smsTemplate`].value = tr.smsTemplate || '';
@@ -631,28 +670,23 @@ async function buildSettingsI18n(patch, old, f) {
   const lines = (v) => String(v || '').split('\n').map((s) => s.trim()).filter(Boolean);
   const result = {};
   const todo = []; // [lang, 欄位, 原文索引]
-  const texts = [patch.bannerText, patch.consentText, patch.smsTemplate, ...patch.messageTemplates];
+  const SIMPLE = ['bannerText', 'consentText', 'smsTemplate', 'presaleBannerText', 'presaleTeacher', 'presaleConsentText'];
+  const texts = [...SIMPLE.map((k) => patch[k]), ...patch.messageTemplates];
   const changed = {
-    bannerText: patch.bannerText !== (old.bannerText || ''),
-    consentText: patch.consentText !== (old.consentText || ''),
-    smsTemplate: patch.smsTemplate !== (old.smsTemplate || ''),
     messageTemplates: patch.messageTemplates.join('\n') !== (old.messageTemplates || []).join('\n'),
   };
+  for (const k of SIMPLE) changed[k] = patch[k] !== (old[k] || '');
   for (const [lang] of TR_LANGS) {
     const oldTr = old.i18n?.[lang] || {};
-    const typed = {
-      bannerText: patch.bannerText ? str(f[`tr_${lang}_bannerText`].value) : '',
-      consentText: str(f[`tr_${lang}_consentText`].value),
-      smsTemplate: str(f[`tr_${lang}_smsTemplate`].value),
-      messageTemplates: lines(f[`tr_${lang}_messageTemplates`].value),
-    };
+    const typed = { messageTemplates: lines(f[`tr_${lang}_messageTemplates`].value) };
+    for (const k of SIMPLE) typed[k] = patch[k] ? str(f[`tr_${lang}_${k}`].value) : '';
     result[lang] = typed;
-    ['bannerText', 'consentText', 'smsTemplate'].forEach((key, i) => {
+    SIMPLE.forEach((key, i) => {
       if (patch[key] && needAuto(typed[key], oldTr[key], changed[key])) todo.push([lang, key, i]);
     });
     if (patch.messageTemplates.length && (typed.messageTemplates.length !== patch.messageTemplates.length
       || (changed.messageTemplates && typed.messageTemplates.join('\n') === (oldTr.messageTemplates || []).join('\n')))) {
-      todo.push([lang, 'messageTemplates', 3]);
+      todo.push([lang, 'messageTemplates', SIMPLE.length]);
     }
   }
   if (!todo.length) return { i18n: result, auto: 0, failed: false };
@@ -661,7 +695,7 @@ async function buildSettingsI18n(patch, old, f) {
   for (const [lang, key, i] of todo) {
     const list = res[lang];
     if (!list) continue;
-    result[lang][key] = key === 'messageTemplates' ? list.slice(3) : (list[i] || '');
+    result[lang][key] = key === 'messageTemplates' ? list.slice(SIMPLE.length) : (list[i] || '');
   }
   return { i18n: result, auto: todo.length, failed: false };
 }
@@ -677,7 +711,15 @@ $('#settings-form').addEventListener('submit', (e) => {
     const patch = {
       bannerActive: f.bannerActive.checked,
       bannerText: f.bannerText.value.trim(),
-      acceptingPreorders: f.acceptingPreorders.checked,
+      presaleBannerActive: f.presaleBannerActive.checked,
+      presaleBannerText: f.presaleBannerText.value.trim(),
+      orderMode: f.elements.orderMode.value || 'open',
+      acceptingPreorders: (f.elements.orderMode.value || 'open') === 'open',
+      presaleTeacher: f.presaleTeacher.value.trim(),
+      presalePayHours: Math.min(PRESALE_MAX_PAY_HOURS, Math.max(1, Math.round(Number(f.presalePayHours.value) || PRESALE_PAY_HOURS))),
+      presaleMaxItems: f.presaleMaxItems.value.trim() === '' ? null : Math.max(1, Math.round(Number(f.presaleMaxItems.value))),
+      presaleConsentText: f.presaleConsentText.value.trim(),
+      presaleSlots: slotsForSave(),
       showStockLeft: f.showStockLeft.checked,
       maxItemsPerOrder: Math.max(1, Math.round(Number(f.maxItemsPerOrder.value) || 10)),
       pickupReminderMinutes: Math.max(1, Math.round(Number(f.pickupReminderMinutes.value) || 15)),
@@ -691,6 +733,11 @@ $('#settings-form').addEventListener('submit', (e) => {
     };
     if (!patch.paymentMethods.length) {
       toast('至少需要一種付款方式', 'danger');
+      return;
+    }
+    const slotErr = validateSlots(patch.presaleSlots);
+    if (slotErr) {
+      toast(slotErr, 'danger', 5000);
       return;
     }
     // Google 地圖：可貼整段嵌入碼或網址，只保留 https://www.google.com/maps/embed 開頭的網址
@@ -714,6 +761,62 @@ $('#settings-form').addEventListener('submit', (e) => {
       f.dataset.dirty = '0';
       $('#settings-note').textContent = '';
       toast(translateNotice(tr), tr.failed ? 'info' : 'success', tr.auto || tr.failed ? 6000 : 3200);
+    } catch (err) {
+      toast(errorText(err), 'danger');
+    }
+  });
+});
+
+// ===== 預購取餐時段編輯器：日期、開始時間、結束時間(可空白)、名額(可空白) =====
+let slotDraft = [];
+function renderSlotEditor() {
+  $('#slot-editor').innerHTML = slotDraft.length ? slotDraft.map((x, i) => `
+    <div class="slot-editor__row" data-slot="${i}">
+      <label class="field"><span class="field__hint">日期</span><input class="input" type="date" data-k="date" value="${escapeHtml(x.date || '')}"></label>
+      <label class="field"><span class="field__hint">開始</span><input class="input" type="time" data-k="start" value="${escapeHtml(x.start || '')}"></label>
+      <label class="field"><span class="field__hint">結束(可空白)</span><input class="input" type="time" data-k="end" value="${escapeHtml(x.end || '')}"></label>
+      <label class="field"><span class="field__hint">名額</span><input class="input" type="number" min="1" step="1" data-k="cap" value="${x.cap ?? ''}"></label>
+      <button class="btn btn--ghost btn--icon" type="button" data-slot-del aria-label="刪除時段">${icon('delete')}</button>
+    </div>`).join('') : '<p class="muted text-sm">尚未設定取餐時段，預購模式下顧客無法送出。</p>';
+}
+$('#slot-add').addEventListener('click', () => {
+  const last = slotDraft[slotDraft.length - 1];
+  slotDraft.push({ id: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, date: last?.date || '', start: '', end: '', cap: last?.cap ?? null });
+  renderSlotEditor();
+  $('#settings-form').dataset.dirty = '1';
+});
+$('#slot-editor').addEventListener('input', (e) => {
+  const row = e.target.closest('[data-slot]');
+  if (!row || !e.target.dataset.k) return;
+  slotDraft[Number(row.dataset.slot)][e.target.dataset.k] = e.target.value;
+});
+$('#slot-editor').addEventListener('click', (e) => {
+  if (!e.target.closest('[data-slot-del]')) return;
+  slotDraft.splice(Number(e.target.closest('[data-slot]').dataset.slot), 1);
+  renderSlotEditor();
+  $('#settings-form').dataset.dirty = '1';
+});
+function slotsForSave() {
+  return slotDraft.map((x) => ({
+    id: x.id, date: x.date || '', start: x.start || '', end: x.end || '',
+    cap: x.cap === '' || x.cap == null ? null : Math.max(1, Math.round(Number(x.cap))),
+  }));
+}
+function validateSlots(slots) {
+  for (const [i, x] of slots.entries()) {
+    if (!x.date || !x.start) return `第 ${i + 1} 個取餐時段請填寫日期與開始時間`;
+    if (x.end && x.end <= x.start) return `第 ${i + 1} 個取餐時段的結束時間要晚於開始時間`;
+  }
+  return '';
+}
+
+// ===== C 編號歸零 =====
+$('#reset-counter-c').addEventListener('click', async (e) => {
+  if (!await confirmDialog('C 編號歸零', '確定要讓預購單編號(C)從 001 重新開始嗎？請確認上一批預購單都已結束。', { confirmLabel: '歸零', danger: true })) return;
+  withBusy(e.currentTarget, async () => {
+    try {
+      await api.resetCounterC();
+      toast('C 編號已歸零', 'success');
     } catch (err) {
       toast(errorText(err), 'danger');
     }
@@ -843,7 +946,7 @@ function renderFinance() {
     <tr data-order="${o.id}" class="${o.deleted ? 'is-deleted' : ''}">
       <td class="display-no">${escapeHtml(o.no)}</td>
       <td>${TYPE_LABEL[o.type] || o.type}</td>
-      <td>${o.deleted ? '已刪除' : (o.voided ? '已作廢' : (STATUS_LABEL[o.status] || o.status))}</td>
+      <td>${o.deleted ? '已刪除' : (o.voided || isPresaleVoid(o) ? '已作廢' : statusLabel(o))}</td>
       <td>${dateTime(o.establishedAt || o.createdAt)}</td>
       <td>${escapeHtml(personName(o.surname, o.title))}</td>
       <td>${escapeHtml(summarizeLines(displayLines(o, {})))}${o.note ? `<div class="muted">${escapeHtml(o.note)}</div>` : ''}</td>
@@ -952,7 +1055,7 @@ $('#finance-export').addEventListener('click', (e) => withBusy(e.currentTarget, 
   }
   const header = ['訂單編號', '類型', '狀態', '已刪除', '姓氏', '電話', '品項', '件數', '金額', '付款方式', '送出時間', '確立時間', '取餐時間', '備註'];
   const rows = financeOrders.map((o) => [
-    o.no, TYPE_LABEL[o.type] || o.type, o.voided ? '已作廢' : (STATUS_LABEL[o.status] || o.status), o.deleted ? '是' : '',
+    o.no, TYPE_LABEL[o.type] || o.type, o.voided || isPresaleVoid(o) ? '已作廢' : statusLabel(o), o.deleted ? '是' : '',
     personName(o.surname, o.title), contactMap[o.id]?.phone ? `="${contactMap[o.id].phone}"` : '', // 公式寫法讓 Excel 保留開頭的 0
     (o.lines || []).map((l) => `${lineLabel(l)}×${l.qty}`).join('、'), o.itemCount ?? '', o.total ?? '',
     o.payment || '', dateTime(o.createdAt), dateTime(o.establishedAt), dateTime(o.pickedAt), o.note || '',
@@ -996,7 +1099,7 @@ function renderAccounts() {
 }
 
 function roleOptions(selected) {
-  return ['staff', 'manager'].map((r) => `<option value="${r}" ${r === selected ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`).join('');
+  return ['staff', 'manager', 'presale'].map((r) => `<option value="${r}" ${r === selected ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`).join('');
 }
 
 $('#account-add').addEventListener('click', async () => {
@@ -1104,7 +1207,7 @@ $('#void-orders').addEventListener('click', (e) => withBusy(e.currentTarget, asy
       toast('目前沒有未完成的訂單');
       return;
     }
-    const rows = list.map((o) => `<li><strong>${escapeHtml(o.no)}</strong> ${escapeHtml(STATUS_LABEL[o.status] || o.status)}<span class="muted"> · ${escapeHtml(dateTime(o.createdAt))}</span></li>`).join('');
+    const rows = list.map((o) => `<li><strong>${escapeHtml(o.no)}</strong> ${escapeHtml(statusLabel(o))}<span class="muted"> · ${escapeHtml(dateTime(o.createdAt))}</span></li>`).join('');
     const first = await openDialog({
       title: `作廢 ${list.length} 張未完成訂單？`,
       body: `<p>以下訂單會改為「已取消」並標記為作廢。資料與收支紀錄會保留，不會通知顧客；已扣除的品項庫存不會加回。</p>
@@ -1164,8 +1267,9 @@ async function showPhoneLock(phone) {
   if (order) {
     if (order.voided) status = '已作廢';
     else if (order.deleted) status = '已刪除';
-    else if (isExpired(order)) status = `${STATUS_LABEL[order.status] || order.status}(已超過 12 小時，視為失效)`;
-    else status = STATUS_LABEL[order.status] || order.status;
+    else if (isPresaleVoid(order)) status = '已作廢(逾時未付款)';
+    else if (isExpired(order)) status = `${statusLabel(order)}(已超過 12 小時，視為失效)`;
+    else status = statusLabel(order);
   }
   const done = isFinal(order);
   box.innerHTML = `

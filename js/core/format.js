@@ -1,7 +1,7 @@
 // 格式化工具：訂單編號、金額、時間、狀態文字
 
-// 訂單類型對應的編號字首：預點 A、現場 B、管理員手動新增 M
-export const PREFIX = { preorder: 'A', walkin: 'B', manual: 'M' };
+// 訂單類型對應的編號字首：預點 A、現場 B、預購 C、管理員手動新增 M
+export const PREFIX = { preorder: 'A', walkin: 'B', presale: 'C', manual: 'M' };
 
 export function formatNo(type, seq) {
   const prefix = PREFIX[type] ?? 'X';
@@ -60,17 +60,27 @@ export const STATUS_LABEL = {
   cancelled: '已取消',
 };
 
-export const TYPE_LABEL = { preorder: '預點', walkin: '現場', manual: '手動' };
+export const TYPE_LABEL = { preorder: '預點', walkin: '現場', presale: '預購', manual: '手動' };
 
-// 稱謂選項(姓氏與稱謂皆必填)
+// 預購單的狀態文字(攤位端與後台)：未付款「請付款」、已付款「已接單」
+export const PRESALE_STATUS_LABEL = { pending: '請付款', accepted: '已接單' };
+
+// 依訂單類型取得狀態文字
+export function statusLabel(o) {
+  if (o?.type === 'presale' && PRESALE_STATUS_LABEL[o.status]) return PRESALE_STATUS_LABEL[o.status];
+  return STATUS_LABEL[o?.status] || o?.status || '';
+}
+
+// 稱謂選項(姓氏與稱謂皆必填)；預購模式改填全名，稱謂為老師／主任／其他
 export const TITLES = ['先生', '小姐', '其他'];
+export const PRESALE_TITLES = ['老師', '主任', '其他'];
 
 // 顯示用姓名：姓氏 + 稱謂，例如「王先生」
 export function personName(surname, title) {
   return `${surname || ''}${surname ? title || '' : ''}`;
 }
 
-export const ROLE_LABEL = { admin: '管理員', manager: '攤位主管', staff: '店員' };
+export const ROLE_LABEL = { admin: '管理員', manager: '攤位主管', staff: '店員', presale: '預購主管' };
 
 export function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (c) => ({

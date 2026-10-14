@@ -12,24 +12,31 @@
 //   reportOverLimit({ surname, phone, summary, count })     超量時通知攤位收件匣
 //   watchOrder(orderId, cb) / cancelOrder(orderId) / findOrder(no, phone) / claimOrder(orderId)
 //   enablePush(orderId)                申請通知權限並儲存推播 token
+//   submitPresale({ lines, surname, title, phone, consentText, lang, slotId })  預購單(C)
+//   watchPresaleStats(cb)              { slots: 各時段已付款數, sold: 各品項已付款的預購數量 }
 //
 // 攤位(店員以上)
 //   onStaffAuth(cb) / staffLogin(username, password) / staffLogout()
 //   watchTodayOrders(cb) / acceptOrder / rejectOrder / markReady / undoReady / markPicked
 //   sendMessage(orderId, text) / notifyCustomer(orderId, kind, text) / getContact(orderId)
 //   createWalkin({ lines, payment, later, surname, phone }) / watchInbox(cb) / markInboxRead(id)
-//   setAccepting(bool)
+//   setAccepting(bool) / setOrderMode('off' | 'presale' | 'open')(攤位主管以上)
 //
 // 攤位主管以上
 //   watchAllItems(cb) / saveItem(item) / deleteItem(id) / setItemImage(id, dataUrl)
 //   saveSettings(patch) / ensureSettings() / listOrders({ from, to })
 //
+// 預購主管(與管理員)
+//   markPresalePaid(orderId, slotId?) / markPresaleUnpaid(orderId, hours) / setPresalePayHours(hours)
+//
 // 管理員
 //   adminUpdateOrder(id, patch) / adminDeleteOrder(id) / adminCreateManual(data)
 //   listAccounts() / createAccount(data) / updateAccount(uid, patch) / deleteAccount(uid)
 //   resetCounters() / resetDemo()(僅展示模式)
+//   resetCounterC()  C 編號歸零
 //   syncSheetNow() / resetSoldCounts()  立即同步試算表、重設已售出數量
 //   revertOrder(orderId)  退回上一個狀態
+//   setBannerFlags(id, { showNormal, showPresale })  橫幅顯示模式
 //   setBannerLang(id, lang, dataUrl)  英文、日文版橫幅圖片(null 為刪除)
 //   getPhoneLock(phone) / releasePhoneLock(phone)  電話綁定查詢與解除
 

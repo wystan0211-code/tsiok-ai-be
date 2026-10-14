@@ -7,6 +7,7 @@ import { formatNo, randomToken, startOfDay } from '../core/format.js';
 import {
   countItems, isFinal, priceLines, stockProblems, stockUpdates, ORDER_TTL_MS, ACTIVE_STATUSES,
   optionProblems, cleanLines,
+  orderMode, presaleIssues, slotLeft, isPresale, isPresaleVoid, PRESALE_PAY_HOURS, presaleBlockers,
 } from '../core/order-logic.js';
 import { SUB_PREFS, applyLineChanges } from '../core/shortage.js';
 
@@ -57,7 +58,8 @@ function seed() {
     itemImages: {},
     orders: {},
     contacts: {},
-    counters: { A: { value: 0 }, B: { value: 0 } },
+    counters: { A: { value: 0 }, B: { value: 0 }, C: { value: 0 } },
+    presaleStats: { slots: {}, sold: {} },
     sessions: {},
     activePhones: {},
     lookups: {},
@@ -69,7 +71,15 @@ function seed() {
 function load() {
   try {
     const raw = localStorage.getItem(DB_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const d = JSON.parse(raw);
+      // 舊版展示資料補上新欄位
+      d.presaleStats ??= { slots: {}, sold: {} };
+      d.counters ??= {};
+      d.counters.C ??= { value: 0 };
+      for (const u of DEMO_USERS) if (!Object.values(d.users || {}).some((x) => x.username === u.username)) d.users[u.uid] = { ...u, createdAt: Date.now() };
+      return d;
+    }
   } catch {
     // 資料損毀時重建
   }
@@ -161,6 +171,7 @@ function requireRole(roles) {
 const STAFF = ['staff', 'manager', 'admin'];
 const MANAGER = ['manager', 'admin'];
 const ADMIN = ['admin'];
+const PRESALE_MGR = ['presale', 'admin'];
 
 function getOrder(id) {
   const o = db.orders[id];
@@ -311,6 +322,106 @@ export const api = {
     return { orderId: id, no };
   },
 
+  // ===== 預購(C 單)：與正式版相同 =====
+  async submitPresale({ lines, surname, title, phone, consentText, lang = 'zh-Hant', slotId }) {
+    await delay(300);
+    const uid = customerUid();
+    const settings = { ...DEFAULT_SETTINGS, ...db.settings };
+    if (orderMode(settings) !== 'presale') throw new ApiError('presale-closed');
+    const slot = (settings.presaleSlots || []).find((x) => x.id === slotId);
+    if (!slot || slotLeft(slot, db.presaleStats.slots) <= 0) throw new ApiError('slot-invalid');
+    const count = countItems(lines);
+    if (count < 1) throw new ApiError('invalid');
+    if (settings.presaleMaxItems && count > settings.presaleMaxItems) throw new ApiError('over-limit');
+    const session = db.sessions[uid];
+    if (!session || session.used) throw new ApiError('session-invalid');
+    const lock = db.activePhones[phone];
+    if (lock && db.orders[lock.orderId] && !isFinal(db.orders[lock.orderId])) throw new ApiError('phone-active');
+    const problems = [...presaleBlockers(lines, itemsMap()), ...optionProblems(lines, itemsMap())];
+    if (problems.length) throw new ApiError('sold-out', `無法供應：${problems.join('、')}`);
+    if (presaleIssues(lines, itemsMap(), db.presaleStats.sold).length) throw new ApiError('presale-limit');
+
+    const id = newId();
+    const seq = nextSeq('C');
+    const no = formatNo('presale', seq);
+    const now = Date.now();
+    db.orders[id] = {
+      id, type: 'presale', seq, no, status: 'pending', uid, paid: false,
+      payHours: Number(settings.presalePayHours) || PRESALE_PAY_HOURS, slotId,
+      items: cleanLines(lines, itemsMap()), itemCount: count, surname, title, lang, pushEnabled: false, messages: [],
+      createdAt: now, updatedAt: now,
+    };
+    db.contacts[id] = { orderId: id, surname, phone, consentNotify: true, consentText, consentAt: now, createdAt: now };
+    db.activePhones[phone] = { uid, orderId: id, updatedAt: now };
+    db.sessions[uid] = { ...session, used: true, orderId: id, updatedAt: now };
+    db.lookups[`${no}_${phone}`] = { orderId: id, createdAt: now };
+    commit();
+    return { orderId: id, no };
+  },
+
+  watchPresaleStats(cb) {
+    return watch((d) => ({ slots: { ...(d.presaleStats?.slots || {}) }, sold: { ...(d.presaleStats?.sold || {}) } }), cb);
+  },
+
+  async markPresalePaid(orderId, slotId = null) {
+    await delay();
+    requireRole(PRESALE_MGR);
+    const o = getOrder(orderId);
+    if (o.type !== 'presale' || o.status !== 'pending' || o.paid) throw new ApiError('bad-state');
+    const settings = { ...DEFAULT_SETTINGS, ...db.settings };
+    const stats = db.presaleStats;
+    const target = slotId || o.slotId;
+    const slot = (settings.presaleSlots || []).find((x) => x.id === target);
+    if (!slot || slotLeft(slot, stats.slots) <= 0) {
+      throw new ApiError(slotId ? 'slot-invalid' : 'slot-full', slotId ? null : '原本選擇的取餐時段已額滿，請改選其他時段。', { needSlot: true });
+    }
+    const over = presaleIssues(o.items, itemsMap(), stats.sold);
+    if (over.length) throw new ApiError('presale-limit', `超過預購數量上限：${over.map((x) => `${x.item.name}(剩 ${x.left} 份)`).join('、')}`);
+    const priced = priceLines(o.items, itemsMap());
+    for (const l of o.items) stats.sold[l.itemId] = (stats.sold[l.itemId] || 0) + l.qty;
+    stats.slots[target] = (stats.slots[target] || 0) + 1;
+    const now = Date.now();
+    Object.assign(o, {
+      status: 'accepted', paid: true, paidAt: now, lines: priced.lines, total: priced.total,
+      acceptedAt: now, establishedAt: now, updatedAt: now,
+      ...(target !== o.slotId ? { slotId: target, slotChanged: true } : {}),
+    });
+    commit();
+  },
+
+  async markPresaleUnpaid(orderId, hours) {
+    await delay();
+    requireRole(PRESALE_MGR);
+    const o = getOrder(orderId);
+    if (o.type !== 'presale' || o.status !== 'accepted' || !o.paid) throw new ApiError('bad-state');
+    const stats = db.presaleStats;
+    for (const l of (o.lines?.length ? o.lines : o.items)) stats.sold[l.itemId] = Math.max(0, (stats.sold[l.itemId] || 0) - l.qty);
+    stats.slots[o.slotId] = Math.max(0, (stats.slots[o.slotId] || 0) - 1);
+    const now = Date.now();
+    for (const k of ['paidAt', 'lines', 'total', 'acceptedAt', 'establishedAt']) delete o[k];
+    Object.assign(o, { status: 'pending', paid: false, payFrom: now, payHours: Math.round(hours), updatedAt: now });
+    commit();
+  },
+
+  async setPresalePayHours(hours) {
+    requireRole(PRESALE_MGR);
+    db.settings.presalePayHours = Math.round(hours);
+    commit();
+  },
+
+  async resetCounterC() {
+    requireRole(ADMIN);
+    db.counters.C = { value: 0 };
+    commit();
+  },
+
+  async setOrderMode(mode) {
+    requireRole(MANAGER);
+    db.settings.orderMode = mode;
+    db.settings.acceptingPreorders = mode === 'open';
+    commit();
+  },
+
   async reportOverLimit({ surname, phone, summary, count }) {
     const uid = customerUid();
     const prev = db.inbox[uid];
@@ -380,11 +491,17 @@ export const api = {
   },
 
   // ===== 攤位營運 =====
-  watchTodayOrders(cb) {
+  // 與正式版相同：今天的訂單 + 全部預購單(逾時作廢的不顯示)；presaleOnly 只有預購單
+  watchTodayOrders(cb, { presaleOnly = false } = {}) {
     const today = startOfDay();
     const from = Math.min(today, Date.now() - ORDER_TTL_MS);
     return watch((d) => Object.values(d.orders)
-      .filter((o) => o.createdAt >= from && !o.deleted && (o.createdAt >= today || !isFinal(o)))
+      .filter((o) => {
+        if (o.deleted) return false;
+        if (isPresale(o)) return !isPresaleVoid(o) && (!isFinal(o) || (o.updatedAt || 0) >= today);
+        if (presaleOnly) return false;
+        return o.createdAt >= from && (o.createdAt >= today || !isFinal(o));
+      })
       .sort((a, b) => a.createdAt - b.createdAt), cb);
   },
 
@@ -736,6 +853,12 @@ export const api = {
     commit();
   },
 
+  async setBannerFlags(id, flags) {
+    requireRole(MANAGER);
+    if (db.banners[id]) Object.assign(db.banners[id], flags, { updatedAt: Date.now() });
+    commit();
+  },
+
   async setBannerLang(id, lang, dataUrl) {
     await delay();
     requireRole(MANAGER);
@@ -886,6 +1009,7 @@ export const api = {
   async resetSoldCounts() {
     await delay();
     requireRole(ADMIN);
+    db.presaleStats.sold = {};
     const items = Object.values(db.items);
     for (const item of items) {
       item.soldCount = 0;

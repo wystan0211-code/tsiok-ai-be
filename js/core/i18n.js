@@ -1,6 +1,7 @@
 // 多語言模組：只用在顧客點餐頁面(首頁、點餐、訂單進度)
 // 頁面的 <html> 需標記 data-i18n-page="on" 才會套用所選語言；攤位與後台一律使用中文
 // 「九愛！買」為商標，任何語言都不翻譯
+import { DEFAULT_SETTINGS } from './defaults.js';
 
 const KEY = 'tab-lang';
 
@@ -227,6 +228,30 @@ const DICT = {
   'err.claimed': ['這張訂單已經綁定到其他裝置。', 'This order is already linked to another device.', 'この注文はすでに別の端末に登録されています。'],
   'err.invalid': ['資料格式不正確。', 'Invalid information. Please check and try again.', '入力内容が正しくありません。'],
   'err.unknown': ['發生未預期的錯誤，請稍後再試。', 'Something went wrong. Please try again later.', '予期しないエラーが発生しました。しばらくしてからもう一度お試しください。'],
+  // ===== 預購模式 =====
+  'home.startPresale': ['開始預購', 'Start pre-order', '予約注文をはじめる'],
+  'order.payNotePresale': ['請於{h}小時內以現金或園遊券向 {t} 付款', 'Please pay {t} in cash or festival vouchers within {h} hours.', '{h}時間以内に、現金または金券（園遊券）で{t}にお支払いください。'],
+  'order.fullName': ['全名', 'Full name', '氏名'],
+  'title.老師': ['老師', 'Teacher', '先生'],
+  'title.主任': ['主任', 'Director', '主任'],
+  'slot.title': ['取餐時間', 'Pickup time', '受け取り時間'],
+  'slot.placeholder': ['請選擇取餐時間', 'Choose a pickup time', '受け取り時間を選択してください'],
+  'slot.none': ['目前沒有可選擇的取餐時間，請洽攤位。', 'No pickup times are available. Please contact the stall.', '選択できる受け取り時間がありません。屋台にお問い合わせください。'],
+  'status.presalePending': ['請付款', 'Payment required', 'お支払いください'],
+  'status.presaleAccepted': ['已接單', 'Confirmed', '受付済み'],
+  'status.presaleVoid': ['已作廢', 'Voided', '無効'],
+  'track.payHint': ['向 {t} 付款並確認訂單', 'Pay {t} to confirm your order', '{t}にお支払いいただくと注文が確定します'],
+  'track.presaleAcceptedHint': ['活動當天會提醒您前往取餐', 'We will remind you to pick it up on the event day.', 'イベント当日に受け取りのお知らせをします'],
+  'track.presaleVoid': ['此預購單已作廢：{h} 小時內未完成付款。', 'This pre-order was voided because payment was not completed within {h} hours.', 'この予約注文は {h} 時間以内にお支払いがなかったため無効になりました。'],
+  'track.payBy': ['付款期限：{t}', 'Pay by: {t}', 'お支払い期限：{t}'],
+  'track.slot': ['取餐時間：{s}', 'Pickup time: {s}', '受け取り時間：{s}'],
+  'track.slotChanged': ['取餐時間已變更為 {s}', 'Your pickup time was changed to {s}', '受け取り時間が {s} に変更されました'],
+  'step.pay': ['請付款', 'Pay', 'お支払い'],
+  'step.confirmed': ['已接單', 'Confirmed', '受付済み'],
+  'order.limitMaxPresale': ['單筆預購最多 {n} 件，請減少數量。', 'Each pre-order is limited to {n} items. Please reduce the quantity.', '1回の予約注文は{n}点までです。数量を減らしてください。'],
+  'err.presale-closed': ['目前沒有開放預購。', 'Pre-orders are not open right now.', '現在、予約注文は受け付けていません。'],
+  'err.slot-invalid': ['這個取餐時間已額滿或已取消，請重新選擇。', 'This pickup time is full or no longer available. Please choose another.', 'この受け取り時間は満員か利用できません。別の時間を選択してください。'],
+  'err.presale-limit': ['部分品項的預購數量已達上限。', 'Some items have reached their pre-order limit.', '一部の商品は予約上限に達しました。'],
 };
 
 const INDEX = { 'zh-Hant': 0, en: 1, ja: 2 };
@@ -307,8 +332,8 @@ export function withOption(name, option, lang = getLang()) {
 
 // 設定中顧客看得到的文字：settings.i18n = { en: { bannerText, consentText }, ja: {...} }
 export function settingText(settings, field, lang = getLang()) {
-  if (lang === 'zh-Hant') return settings?.[field] || '';
-  return settings?.i18n?.[lang]?.[field] || settings?.[field] || '';
+  if (lang === 'zh-Hant') return settings?.[field] || DEFAULT_SETTINGS[field] || '';
+  return settings?.i18n?.[lang]?.[field] || DEFAULT_SETTINGS.i18n?.[lang]?.[field] || settings?.[field] || '';
 }
 
 // 套用靜態文字：data-i18n(文字)、data-i18n-placeholder、data-i18n-aria、data-i18n-alt

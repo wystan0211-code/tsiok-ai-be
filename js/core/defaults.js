@@ -11,6 +11,16 @@ export const DEFAULT_SETTINGS = {
   guideMapUrl: '',
   guideImageVersion: 0,
   acceptingPreorders: true,
+  // 平台模式：off 關閉 / presale 預購 / open 點餐(acceptingPreorders 與 open 同步，給舊版相容)
+  orderMode: 'open',
+  // 預購模式
+  presaleTeacher: '林敏君老師',      // 付款對象(顧客端顯示)
+  presalePayHours: 12,               // 付款期限(小時，1～48)
+  presaleMaxItems: null,             // 每張預購單最多幾件(空白為不限制)
+  presaleSlots: [],                  // 取餐時段 [{ id, date, start, end, cap }]
+  presaleBannerText: '',             // 預購模式的跑馬燈
+  presaleBannerActive: false,
+  presaleConsentText: '我同意攤位使用我填寫的全名與電話，於餐點完成時通知我取餐。',
   maxItemsPerOrder: 10,
   pickupReminderMinutes: 15,
   showStockLeft: true, // 顧客端是否顯示「剩 N 份」
@@ -26,6 +36,9 @@ export const DEFAULT_SETTINGS = {
   i18n: {
     en: {
       bannerText: '',
+      presaleBannerText: '',
+      presaleTeacher: 'Teacher Lin Min-Chun',
+      presaleConsentText: 'I agree that the stall may use my full name and phone number to notify me when my order is ready.',
       consentText: 'I agree that the stall may use my last name and phone number to notify me when my order is ready.',
       messageTemplates: [
         'Your order is ready. Please pick it up at the stall.',
@@ -36,6 +49,9 @@ export const DEFAULT_SETTINGS = {
     },
     ja: {
       bannerText: '',
+      presaleBannerText: '',
+      presaleTeacher: '林敏君先生',
+      presaleConsentText: '料理の準備ができた際に受け取りのお知らせをするため、入力した氏名と電話番号を屋台が利用することに同意します。',
       consentText: '料理の準備ができた際に受け取りのお知らせをするため、入力した名字と電話番号を屋台が利用することに同意します。',
       messageTemplates: [
         '料理ができました。屋台でお受け取りください。',
@@ -109,4 +125,5 @@ export const DEMO_USERS = [
   { uid: 'demo-admin', username: 'admin', password: 'admin1234', displayName: '管理員', role: 'admin', disabled: false },
   { uid: 'demo-manager', username: 'manager', password: 'manager1234', displayName: '攤位主管', role: 'manager', disabled: false },
   { uid: 'demo-staff', username: 'staff', password: 'staff1234', displayName: '店員小明', role: 'staff', disabled: false },
+  { uid: 'demo-presale', username: 'presale', password: 'presale1234', displayName: '林老師', role: 'presale', disabled: false },
 ];

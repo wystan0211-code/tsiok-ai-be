@@ -8,6 +8,7 @@ import { itemImageRefs, imageDocId } from '../core/images.js';
 import {
   countItems, isFinal, priceLines, stockProblems, stockUpdates, ORDER_TTL_MS, ACTIVE_STATUSES,
   optionProblems, cleanLines,
+  orderMode, presaleIssues, slotLeft, isPresale, isPresaleVoid, PRESALE_PAY_HOURS, presaleBlockers,
 } from '../core/order-logic.js';
 import { SUB_PREFS, applyLineChanges } from '../core/shortage.js';
 
@@ -87,6 +88,9 @@ function watchQuery(q, cb, transform = (list) => list) {
 }
 
 const ref = (path, id) => doc(db, path, id);
+// 預購統計文件
+const STATS_REF = () => ref('presaleStats', 'main');
+const statsOf = (d) => ({ slots: { ...(d?.slots || {}) }, sold: { ...(d?.sold || {}) } });
 
 async function authReady() {
   if (auth.authStateReady) await auth.authStateReady();
@@ -397,6 +401,130 @@ export const api = {
     }
   }),
 
+  // ===== 預購(C 單) =====
+  // 預購模式開啟時送出；時段名額在標示付款時才占用
+  submitPresale: ({ lines, surname, title, phone, consentText, lang = 'zh-Hant', slotId }) => guard(async () => {
+    const uid = await customerUid();
+    const settings = { ...DEFAULT_SETTINGS, ...(snapData(await getDoc(ref('settings', 'app'))) || {}) };
+    if (orderMode(settings) !== 'presale') throw new ApiError('presale-closed');
+    const slot = (settings.presaleSlots || []).find((x) => x.id === slotId);
+    if (!slot) throw new ApiError('slot-invalid');
+    const stats = statsOf(snapData(await getDoc(STATS_REF())));
+    if (slotLeft(slot, stats.slots) <= 0) throw new ApiError('slot-invalid');
+    const count = countItems(lines);
+    if (count < 1) throw new ApiError('invalid');
+    if (settings.presaleMaxItems && count > settings.presaleMaxItems) throw new ApiError('over-limit');
+    const payHours = Number(settings.presalePayHours) || PRESALE_PAY_HOURS;
+
+    const orderRef = doc(collection(db, 'orders'));
+    const sessionRef = ref('sessions', uid);
+    try {
+      return await runTransaction(db, async (tx) => {
+        const [cSnap, sSnap] = await Promise.all([tx.get(ref('counters', 'C')), tx.get(sessionRef)]);
+        if (!sSnap.exists() || sSnap.data().used) throw new ApiError('session-invalid');
+        const itemsById = await readItems(tx, lines);
+        const problems = [...presaleBlockers(lines, itemsById), ...optionProblems(lines, itemsById)];
+        if (problems.length) throw new ApiError('sold-out', `無法供應：${problems.join('、')}`);
+        if (presaleIssues(lines, itemsById, stats.sold).length) throw new ApiError('presale-limit');
+        const seq = (cSnap.exists() ? cSnap.data().value : 0) + 1;
+        const no = formatNo('presale', seq);
+        tx.set(ref('counters', 'C'), { value: seq, lastOrderId: orderRef.id });
+        tx.set(orderRef, {
+          type: 'presale', seq, no, status: 'pending', uid, paid: false, payHours, slotId,
+          items: cleanLines(lines, itemsById), itemCount: count, surname, title, lang, pushEnabled: false,
+          createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+        });
+        tx.set(ref('contacts', orderRef.id), {
+          orderId: orderRef.id, surname, phone, consentNotify: true, consentText,
+          consentAt: serverTimestamp(), createdAt: serverTimestamp(),
+        });
+        tx.set(ref('activePhones', phone), { uid, orderId: orderRef.id, updatedAt: serverTimestamp() });
+        tx.update(sessionRef, { used: true, orderId: orderRef.id, updatedAt: serverTimestamp() });
+        tx.set(ref('lookups', `${no}_${phone}`), { orderId: orderRef.id, createdAt: serverTimestamp() });
+        return { orderId: orderRef.id, no };
+      });
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      if (err?.code === 'permission-denied') {
+        const s = snapData(await getDoc(sessionRef));
+        if (!s || s.used) throw new ApiError('session-invalid');
+        throw new ApiError('phone-active', null, { diag: `PD PS L${lines.length}` });
+      }
+      throw err;
+    }
+  }),
+
+  // 預購統計 { slots: { 時段ID: 已付款數 }, sold: { 品項ID: 已付款數量 } }
+  watchPresaleStats(cb) {
+    return onSnapshot(STATS_REF(), (snap) => cb(statsOf(snap.exists() ? snap.data() : null)),
+      (err) => console.error('預購統計監聽失敗', err));
+  },
+
+  // 標示已付款：請付款 → 已接單，占用時段名額與預購數量；slotId 為改選的時段(原時段額滿時)
+  // 原時段額滿：丟出 slot-full(附 needSlot)，由畫面讓操作者改選時段
+  markPresalePaid: (orderId, slotId = null) => guard(async () => {
+    const oRef = ref('orders', orderId);
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(oRef);
+      if (!snap.exists()) throw new ApiError('not-found');
+      const o = snap.data();
+      if (o.type !== 'presale' || o.status !== 'pending' || o.paid) throw new ApiError('bad-state');
+      const settings = { ...DEFAULT_SETTINGS, ...(snapData(await tx.get(ref('settings', 'app'))) || {}) };
+      const stats = statsOf(snapData(await tx.get(STATS_REF())));
+      const target = slotId || o.slotId;
+      const slot = (settings.presaleSlots || []).find((x) => x.id === target);
+      if (!slot || slotLeft(slot, stats.slots) <= 0) {
+        throw new ApiError(slotId ? 'slot-invalid' : 'slot-full', slotId ? null : '原本選擇的取餐時段已額滿，請改選其他時段。', { needSlot: true });
+      }
+      const itemsById = await readItems(tx, o.items);
+      const over = presaleIssues(o.items, itemsById, stats.sold);
+      if (over.length) {
+        throw new ApiError('presale-limit', `超過預購數量上限：${over.map((x) => `${x.item.name}(剩 ${x.left} 份)`).join('、')}`);
+      }
+      const priced = priceLines(o.items, itemsById);
+      const sold = { ...stats.sold };
+      for (const l of o.items) sold[l.itemId] = (sold[l.itemId] || 0) + l.qty;
+      const slots = { ...stats.slots, [target]: (stats.slots[target] || 0) + 1 };
+      tx.set(STATS_REF(), { slots, sold, updatedAt: serverTimestamp() });
+      tx.update(oRef, {
+        status: 'accepted', paid: true, paidAt: serverTimestamp(), lines: priced.lines, total: priced.total,
+        acceptedAt: serverTimestamp(), establishedAt: serverTimestamp(), updatedAt: serverTimestamp(),
+        ...(target !== o.slotId ? { slotId: target, slotChanged: true } : {}),
+      });
+    });
+  }),
+
+  // 退回未付款：已接單 → 請付款，釋放時段名額與預購數量，付款期限從現在重新計算 hours 小時
+  markPresaleUnpaid: (orderId, hours) => guard(async () => {
+    const oRef = ref('orders', orderId);
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(oRef);
+      if (!snap.exists()) throw new ApiError('not-found');
+      const o = snap.data();
+      if (o.type !== 'presale' || o.status !== 'accepted' || !o.paid) throw new ApiError('bad-state');
+      const stats = statsOf(snapData(await tx.get(STATS_REF())));
+      const sold = { ...stats.sold };
+      for (const l of (o.lines?.length ? o.lines : o.items)) sold[l.itemId] = Math.max(0, (sold[l.itemId] || 0) - l.qty);
+      const slots = { ...stats.slots, [o.slotId]: Math.max(0, (stats.slots[o.slotId] || 0) - 1) };
+      tx.set(STATS_REF(), { slots, sold, updatedAt: serverTimestamp() });
+      tx.update(oRef, {
+        status: 'pending', paid: false, payFrom: serverTimestamp(), payHours: Math.round(hours),
+        paidAt: deleteField(), lines: deleteField(), total: deleteField(),
+        acceptedAt: deleteField(), establishedAt: deleteField(), updatedAt: serverTimestamp(),
+      });
+    });
+  }),
+
+  // 預購付款期限(全站，1～48 小時)
+  setPresalePayHours: (hours) => guard(async () => {
+    await updateDoc(ref('settings', 'app'), { presalePayHours: Math.round(hours), updatedAt: serverTimestamp() });
+  }),
+
+  // C 編號歸零(不影響 A、B)
+  resetCounterC: () => guard(async () => {
+    await setDoc(ref('counters', 'C'), { value: 0, lastOrderId: null });
+  }),
+
   reportOverLimit: ({ surname, phone, summary, count }) => guard(async () => {
     const uid = await customerUid();
     await setDoc(ref('inbox', uid), {
@@ -484,12 +612,29 @@ export const api = {
 
   // ===== 攤位營運 =====
   // 今天的訂單，加上 12 小時內建立、跨日但還沒結束的訂單(例如前一晚 23:50 的單)
-  watchTodayOrders(cb) {
+  // 預購單(C)：送出後到活動當天可能隔好幾天，另外查詢全部預購單；逾時作廢的預設不顯示
+  // presaleOnly：預購主管只能查詢預購單
+  watchTodayOrders(cb, { presaleOnly = false } = {}) {
     const today = startOfDay();
     const from = Math.min(today, Date.now() - ORDER_TTL_MS);
-    const q = query(collection(db, 'orders'),
-      where('createdAt', '>=', Timestamp.fromMillis(from)), orderBy('createdAt'));
-    return watchQuery(q, cb, (list) => list.filter((o) => !o.deleted && (o.createdAt >= today || !isFinal(o))));
+    let todays = [];
+    let presales = [];
+    const emit = () => {
+      const map = new Map();
+      for (const o of [...todays, ...presales]) map.set(o.id, o);
+      const list = [...map.values()].filter((o) => {
+        if (o.deleted) return false;
+        if (isPresale(o)) return !isPresaleVoid(o) && (!isFinal(o) || (o.updatedAt || 0) >= today);
+        return o.createdAt >= today || !isFinal(o);
+      });
+      cb(list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)));
+    };
+    const unsubs = [watchQuery(query(collection(db, 'orders'), where('type', '==', 'presale')), (list) => { presales = list; emit(); })];
+    if (!presaleOnly) {
+      unsubs.push(watchQuery(query(collection(db, 'orders'),
+        where('createdAt', '>=', Timestamp.fromMillis(from)), orderBy('createdAt')), (list) => { todays = list; emit(); }));
+    }
+    return () => unsubs.forEach((u) => u());
   },
 
   acceptOrder: (orderId) => guard(async () => {
@@ -782,6 +927,11 @@ export const api = {
     await updateDoc(ref('settings', 'app'), { acceptingPreorders: !!value, updatedAt: serverTimestamp() });
   }),
 
+  // 平台模式：off 關閉 / presale 預購 / open 點餐(攤位主管以上)
+  setOrderMode: (mode) => guard(async () => {
+    await updateDoc(ref('settings', 'app'), { orderMode: mode, acceptingPreorders: mode === 'open', updatedAt: serverTimestamp() });
+  }),
+
   // ===== 攤位主管 =====
   watchAllItems(cb) {
     return watchQuery(collection(db, 'items'), cb, (list) => list.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
@@ -848,6 +998,11 @@ export const api = {
 
   deleteBanner: (id) => guard(async () => {
     await deleteDoc(ref('banners', id));
+  }),
+
+  // 橫幅顯示模式：{ showNormal, showPresale }
+  setBannerFlags: (id, flags) => guard(async () => {
+    await updateDoc(ref('banners', id), { ...flags, updatedAt: serverTimestamp() });
   }),
 
   // 英文、日文版的橫幅圖片：lang 為 'en' 或 'ja'；dataUrl 為 null 時刪除(顯示中文版)
@@ -977,6 +1132,9 @@ export const api = {
 
   // 重設所有品項的已售出數量(有設定數量上限的品項同時解除售完)
   resetSoldCounts: () => guard(async () => {
+    // 預購已售數量一併歸零；時段名額對應已付款的訂單，保留不動
+    const stats = statsOf(snapData(await getDoc(STATS_REF())));
+    await setDoc(STATS_REF(), { slots: stats.slots, sold: {}, updatedAt: serverTimestamp() });
     const snap = await getDocs(collection(db, 'items'));
     for (let i = 0; i < snap.docs.length; i += 400) {
       const batch = writeBatch(db);

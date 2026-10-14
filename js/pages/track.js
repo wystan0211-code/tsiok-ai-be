@@ -12,9 +12,10 @@ import {
 } from '../core/format.js';
 import {
   displayLines, displayTotal, estimateReadyAt, isFinal, isExpired, normalizePhone, isValidPhone,
+  isPresale, isPresaleVoid, payDeadline, slotLabel, PRESALE_PAY_HOURS,
 } from '../core/order-logic.js';
 import {
-  t, getLang, itemText, totalMoney, withOption,
+  t, getLang, itemText, totalMoney, withOption, settingText,
 } from '../core/i18n.js';
 import {
   beep, vibrate, unlockAudio, startAlarm, stopAlarm,
@@ -91,7 +92,8 @@ document.addEventListener('visibilitychange', updateWakeLock);
 let guideKey = '';
 function renderGuide() {
   const box = $('#o-guide');
-  box.hidden = !settings || settings.guideActive === false || !order || isFinal(order);
+  // 預購單不顯示「引導我去攤位」
+  box.hidden = !settings || settings.guideActive === false || !order || isFinal(order) || isPresale(order);
   if (box.hidden) return;
   const key = [settings.guideType, settings.guideMapUrl, settings.guideImageVersion, getLang()].join('|');
   if (key === guideKey) return;
@@ -205,6 +207,7 @@ $('#find-form').addEventListener('submit', (e) => {
 // ===== 訂單進度 =====
 const STEP_KEYS = {
   preorder: ['step.sent', 'step.making', 'step.ready', 'step.picked'],
+  presale: ['step.pay', 'step.confirmed', 'step.ready', 'step.picked'],
   walkin: ['step.paid', 'step.making', 'step.ready', 'step.picked'],
 };
 const STEP_INDEX = { pending: 0, accepted: 1, ready: 2, picked: 3 };
@@ -352,10 +355,17 @@ $('#o-short').addEventListener('submit', (e) => {
 
 function renderOrder() {
   show('order');
-  const type = order.type === 'walkin' ? 'walkin' : 'preorder';
+  const presale = isPresale(order);
+  const type = order.type === 'walkin' ? 'walkin' : (presale ? 'presale' : 'preorder');
   const expired = isExpired(order);
+  const presaleVoid = isPresaleVoid(order);
   $('#o-no').textContent = order.no;
-  $('#o-status').textContent = expired ? t('status.expired') : t(`status.${order.status}`);
+  // 預購單：請付款 / 已接單 / 已作廢(逾時未付款)
+  let statusKey = expired ? 'status.expired' : `status.${order.status}`;
+  if (presale && presaleVoid) statusKey = 'status.presaleVoid';
+  else if (presale && order.status === 'pending') statusKey = 'status.presalePending';
+  else if (presale && order.status === 'accepted') statusKey = 'status.presaleAccepted';
+  $('#o-status').textContent = t(statusKey);
   document.title = order.status === 'ready' ? t('track.docReady', { no: order.no }) : t('track.title');
 
   // 預估時間與說明
@@ -370,8 +380,19 @@ function renderOrder() {
   }
   if (order.status === 'ready') eta = t('track.etaReady');
   if (order.status === 'picked') eta = t('track.etaPicked', { time: time(order.pickedAt) });
+  if (presale && order.status === 'pending') eta = t('track.payHint', { t: settingText(settings, 'presaleTeacher') });
+  if (presale && order.status === 'accepted') eta = t('track.presaleAcceptedHint');
   if (expired) eta = '';
   $('#o-eta').textContent = eta;
+  // 「向…付款並確認訂單」字級縮為 3/5
+  $('#o-eta').classList.toggle('order-hero__eta--small', presale && order.status === 'pending' && !expired);
+  // 預購：取餐時間、付款期限
+  const slot = (settings?.presaleSlots || []).find((x) => x.id === order.slotId);
+  const presaleInfo = [];
+  if (presale && slot && !presaleVoid) presaleInfo.push(t('track.slot', { s: slotLabel(slot, getLang()) }));
+  if (presale && order.status === 'pending' && !presaleVoid) presaleInfo.push(t('track.payBy', { t: dateTime(payDeadline(order)) }));
+  $('#o-presale').hidden = !presaleInfo.length;
+  $('#o-presale').innerHTML = presaleInfo.map((x) => `<span>${escapeHtml(x)}</span>`).join('<br>');
 
   // 進度條(狀態沒變時不重畫，避免動畫重播)
   const steps = $('#o-steps');
@@ -397,7 +418,9 @@ function renderOrder() {
 
   // 特殊狀態提示
   const alertBox = $('#o-alert');
-  if (expired) {
+  if (presaleVoid) {
+    alertBox.innerHTML = `<div class="banner banner--danger">${icon('error')}<p>${t('track.presaleVoid', { h: order.payHours || PRESALE_PAY_HOURS })}</p></div>`;
+  } else if (expired) {
     alertBox.innerHTML = `<div class="banner">${icon('info')}<p>${t('track.expired')}</p></div>`;
   } else if (order.status === 'rejected') {
     // 拒絕原因：顧客選英日文時顯示攤位送出時翻譯好的版本
@@ -411,6 +434,8 @@ function renderOrder() {
   } else if (order.status === 'ready') {
     // 「餐點已完成！」一行，說明文字獨立在第二行
     alertBox.innerHTML = `<div class="banner">${icon('notifications_active')}<div><p><strong>${t('track.readyStrong')}</strong></p><p>${escapeHtml(t('track.readyBody', { no: order.no }))}</p></div></div>`;
+  } else if (presale && order.slotChanged && slot && order.status !== 'picked') {
+    alertBox.innerHTML = `<div class="banner">${icon('schedule')}<p>${escapeHtml(t('track.slotChanged', { s: slotLabel(slot, getLang()) }))}</p></div>`;
   } else alertBox.innerHTML = '';
 
   renderShortage();
@@ -562,7 +587,7 @@ async function init() {
 
   api.watchSettings((s) => {
     settings = s;
-    if (order) renderGuide();
+    if (order) renderOrder(); // 預購的取餐時間與付款對象來自設定
   });
 
   api.watchOrder(orderId, (o) => {

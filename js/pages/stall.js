@@ -4,7 +4,7 @@ import {
   $, $$, icon, toast, openDialog, confirmDialog, showDemoBanner, withBusy,
 } from '../core/ui.js';
 import { errorText } from '../core/errors.js';
-import { requireStaff, hasRole } from '../core/guard.js';
+import { requireStaff, hasRole, canPresale, presaleOnly } from '../core/guard.js';
 import { store } from '../core/storage.js';
 import {
   escapeHtml, money, time, minutesSince, fillTemplate, personName, TITLES, TYPE_LABEL, ROLE_LABEL, STATUS_LABEL,
@@ -13,6 +13,8 @@ import {
 import {
   countItems, displayLines, displayTotal, lineLabel, priceLines, stockProblems, summarizeLines,
   normalizePhone, isValidPhone, ACTIVE_STATUSES, createdMs,
+  orderMode, isPresale, payDeadline, slotLabel, slotLeft, groupSlots, slotDateLabel, slotTime,
+  PRESALE_PAY_HOURS, PRESALE_MAX_PAY_HOURS,
 } from '../core/order-logic.js';
 import { chime, startChimeLoop, stopChimeLoop, unlockAudio } from '../core/sound.js';
 import { qrSvg } from '../core/qr.js';
@@ -65,6 +67,8 @@ const paymentMethods = () => settings?.paymentMethods?.length ? settings.payment
 const singlePayment = () => paymentMethods().length === 1;
 const byId = (id) => orders.find((o) => o.id === id);
 let me = null; // 目前登入的攤位人員
+let presaleStats = { slots: {}, sold: {} }; // 預購：各時段已付款數
+const slotOf = (o) => (settings?.presaleSlots || []).find((x) => x.id === o.slotId);
 
 // ===== 分頁 =====
 function selectTab(name) {
@@ -101,10 +105,18 @@ function cardHtml(o, forceOpen = false) {
     o.status === 'picked' && o.payment && !singlePayment() ? `<span class="badge">${escapeHtml(o.payment)}</span>` : '',
     o.shortage ? '<span class="badge badge--warning">等待顧客選擇替代</span>' : '',
     o.totalChanged && ACTIVE_STATUSES.includes(o.status) ? '<span class="badge">已修改明細</span>' : '',
+    // 預購：付款狀態標籤與取餐時段
+    isPresale(o) && ACTIVE_STATUSES.includes(o.status)
+      ? (o.paid ? '<span class="badge badge--success">已付款</span>' : '<span class="badge badge--warning">未付款</span>') : '',
+    isPresale(o) && slotOf(o) ? `<span class="badge">${icon('schedule', 'icon--sm')}${escapeHtml(slotLabel(slotOf(o)))}</span>` : '',
   ].join('');
 
   let actions = '';
-  if (o.status === 'pending') {
+  if (isPresale(o)) {
+    actions = presaleActions(o);
+  } else if (presaleOnly(me)) {
+    actions = '';
+  } else if (o.status === 'pending') {
     actions = `
       <button class="btn btn--primary" data-act="accept">${icon('check')}接單</button>
       <button class="btn btn--danger" data-act="reject">${icon('block')}拒絕</button>`;
@@ -155,11 +167,111 @@ function cardHtml(o, forceOpen = false) {
         ${o.rejectReason ? `<p class="text-sm">拒絕原因：${escapeHtml(o.rejectReason)}</p>` : ''}
         ${o.cancelReason ? `<p class="text-sm">取消原因：${escapeHtml(o.cancelReason)}</p>` : ''}
         ${o.type === 'preorder' && o.subPref && ACTIVE_STATUSES.includes(o.status) ? `<p class="text-sm">缺貨時：<strong>${SUB_PREF_LABEL[o.subPref] || ''}</strong></p>` : ''}
+        ${isPresale(o) && o.status === 'pending' ? `<p class="text-sm">付款期限：<strong>${escapeHtml(dateTimeShort(payDeadline(o)))}</strong></p>` : ''}
         ${shortageHtml(o)}
         <p class="text-sm muted" data-contact>${contact ? `電話 ${escapeHtml(contact.phone)}` : (contact === null ? '沒有留電話' : '電話載入中')}</p>
         ${actions ? `<div class="order-card__actions">${actions}</div>` : ''}
       </div>
     </details>`;
+}
+
+// 預購單的動作：
+//   請付款：預購主管(與管理員)可標示已付款；店員只能看
+//   已接單：預購主管可退回未付款；店員可完成通知、已取餐
+//   可取餐以後：與一般預點相同(預購主管只能看)
+function presaleActions(o) {
+  const mgr = canPresale(me);
+  const staff = !presaleOnly(me);
+  if (o.status === 'pending') {
+    return mgr ? `<button class="btn btn--primary" data-act="paid">${icon('payments')}標示已付款</button>` : '';
+  }
+  if (o.status === 'accepted') {
+    return [
+      staff ? `<button class="btn btn--primary" data-act="ready">${icon('notifications_active')}完成，通知取餐</button>` : '',
+      staff ? `<button class="btn" data-act="message">${icon('chat')}傳訊息</button>` : '',
+      staff ? `<button class="btn btn--ghost" data-act="picked">${icon('done_all')}已取餐</button>` : '',
+      mgr ? `<button class="btn btn--ghost" data-act="unpaid">${icon('undo')}退回未付款</button>` : '',
+    ].join('');
+  }
+  if (!staff) return '';
+  if (o.status === 'ready') {
+    return `<button class="btn btn--primary btn--lg btn--block order-card__pick" data-act="picked">${icon('done_all')}已取餐</button>
+      <button class="btn" data-act="message">${icon('chat')}傳訊息</button>
+      <button class="btn" data-act="sms">${icon('sms')}簡訊通知</button>
+      <button class="btn btn--ghost" data-act="revert">${icon('undo')}退回已接單</button>`;
+  }
+  if (o.status === 'picked' && hasRole(me, 'admin')) {
+    return `<button class="btn btn--ghost" data-act="revert">${icon('undo')}退回可取餐</button>`;
+  }
+  return '';
+}
+
+function dateTimeShort(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+// 標示已付款：原時段額滿時，當場從剩下的時段選一個
+async function doPaid(o) {
+  try {
+    await api.markPresalePaid(o.id);
+    toast(`${o.no} 已付款，訂單已成立`, 'success');
+  } catch (err) {
+    if (!err.needSlot) {
+      toast(errorText(err), 'danger', 5000);
+      return;
+    }
+    const slots = (settings?.presaleSlots || []).filter((x) => x.id !== o.slotId && slotLeft(x, presaleStats.slots) > 0);
+    if (!slots.length) {
+      toast('所有取餐時段都已額滿，無法標示付款', 'danger', 5000);
+      return;
+    }
+    // 預設選第一個還有名額的時段
+    const firstId = groupSlots(slots)[0].slots[0].id;
+    const { value, data } = await openDialog({
+      title: `${o.no} 改選取餐時段`,
+      body: `<p>原本選擇的「${escapeHtml(slotLabel(slotOf(o)) || '取餐時段')}」已額滿，請詢問顧客後改選其他時段：</p>
+        ${groupSlots(slots).map((g) => `<p class="slot-list__date">${escapeHtml(slotDateLabel(g.date))}</p>
+          <div class="radio-group">${g.slots.map((x) => `<label class="radio-chip"><input type="radio" name="slot" value="${escapeHtml(x.id)}" ${x.id === firstId ? 'checked' : ''}><span>${escapeHtml(slotTime(x))}</span></label>`).join('')}</div>`).join('')}`,
+      actions: [{ label: '確定並標示已付款', value: 'ok', variant: 'primary' }],
+    });
+    if (value !== 'ok' || !data.get('slot')) return;
+    try {
+      await api.markPresalePaid(o.id, data.get('slot'));
+      toast(`${o.no} 已付款，取餐時段已改為 ${slotLabel(slots.find((x) => x.id === data.get('slot')))}`, 'success', 5000);
+    } catch (err2) {
+      toast(errorText(err2), 'danger', 5000);
+    }
+  }
+}
+
+// 退回未付款：釋放時段名額，付款期限從現在重新計算(預設為全站設定，可單獨修改)
+async function doUnpaid(o) {
+  const def = Number(settings?.presalePayHours) || PRESALE_PAY_HOURS;
+  const { value, data } = await openDialog({
+    title: `${o.no} 退回未付款`,
+    body: `<p>確定退回未付款嗎？付款期限會重新計算為 <strong data-hours-text>${def}</strong> 小時。</p>
+      <label class="field"><span class="field__label">付款期限(1～${PRESALE_MAX_PAY_HOURS} 小時)</span>
+        <input class="input" name="hours" type="number" min="1" max="${PRESALE_MAX_PAY_HOURS}" step="1" value="${def}" inputmode="numeric"></label>`,
+    actions: [{ label: '退回未付款', value: 'ok', variant: 'danger' }],
+    onOpen: (dlg) => {
+      const input = dlg.querySelector('[name=hours]');
+      input.addEventListener('input', () => { dlg.querySelector('[data-hours-text]').textContent = input.value || '?'; });
+    },
+  });
+  if (value !== 'ok') return;
+  const hours = Math.round(Number(data.get('hours')));
+  if (!(hours >= 1 && hours <= PRESALE_MAX_PAY_HOURS)) {
+    toast(`付款期限請輸入 1～${PRESALE_MAX_PAY_HOURS} 小時`, 'danger');
+    return;
+  }
+  try {
+    await api.markPresaleUnpaid(o.id, hours);
+    toast(`${o.no} 已退回未付款，付款期限 ${hours} 小時`);
+  } catch (err) {
+    toast(errorText(err), 'danger');
+  }
 }
 
 // 稍後取餐的現場訂單：可以再次顯示取餐 QR code
@@ -234,9 +346,11 @@ function loadOpenContacts() {
 
 // 新訂單與收件匣提示音
 function detectNewOrders() {
-  const pendingIds = orders.filter((o) => o.status === 'pending').map((o) => o.id);
+  // 預購單會出現在新訂單，但不通知(不響、不跳提示)
+  const pendingIds = orders.filter((o) => o.status === 'pending' && !isPresale(o)).map((o) => o.id);
+  if (presaleOnly(me)) return;
   if (knownPending) {
-    const fresh = orders.filter((o) => o.status === 'pending' && !knownPending.has(o.id));
+    const fresh = orders.filter((o) => o.status === 'pending' && !isPresale(o) && !knownPending.has(o.id));
     if (fresh.length) toast(`新訂單 ${fresh.map((o) => o.no).join('、')}`, 'info', 5000);
   }
   knownPending = new Set([...(knownPending || []), ...pendingIds]);
@@ -254,7 +368,7 @@ document.addEventListener('click', (e) => {
   if (!o) return;
   const handlers = {
     accept: doAccept, reject: doReject, ready: doReady, picked: doPicked,
-    revert: doRevert, message: doMessage, sms: doSms,
+    revert: doRevert, message: doMessage, sms: doSms, paid: doPaid, unpaid: doUnpaid,
     shortage: doShortage, 'short-timeout': doShortageTimeout,
     qr: async (order) => showPickupTicket(order.id, order.no, order.total),
   };
@@ -1010,16 +1124,52 @@ async function renderPickup() {
   box.innerHTML = found.length ? found.map((o) => cardHtml(o, true)).join('') : '<p class="empty">今天沒有符合的訂單</p>';
 }
 
-// ===== 接受預點開關 =====
-$('#accepting').addEventListener('change', async (e) => {
-  const value = e.target.checked;
+// ===== 平台模式三段滑鈕：關閉 / 預購 / 點餐(攤位主管與管理員) =====
+const MODE_TOAST = { off: '已關閉，顧客無法下單', presale: '已切換為預購模式', open: '已開始接受點餐' };
+function renderModeSwitch() {
+  const box = $('#mode-switch');
+  const mode = orderMode(settings);
+  box.dataset.mode = mode;
+  box.classList.toggle('is-on', mode !== 'off');
+  box.classList.toggle('is-locked', !hasRole(me, 'manager'));
+  for (const b of $$('[data-order-mode]', box)) {
+    b.setAttribute('aria-checked', String(b.dataset.orderMode === mode));
+    b.disabled = !hasRole(me, 'manager');
+  }
+}
+$('#mode-switch').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-order-mode]');
+  if (!btn || !hasRole(me, 'manager') || btn.dataset.orderMode === orderMode(settings)) return;
+  const mode = btn.dataset.orderMode;
+  const prev = settings;
+  settings = { ...settings, orderMode: mode, acceptingPreorders: mode === 'open' };
+  renderModeSwitch();
   try {
-    await api.setAccepting(value);
-    toast(value ? '已開始接受預點' : '已暫停接受預點');
+    await api.setOrderMode(mode);
+    toast(MODE_TOAST[mode]);
   } catch (err) {
-    e.target.checked = !value;
+    settings = prev;
+    renderModeSwitch();
     toast(errorText(err), 'danger');
   }
+});
+
+// 預購付款期限(全站設定)
+$('#presale-tools').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const hours = Math.round(Number(e.currentTarget.hours.value));
+  if (!(hours >= 1 && hours <= PRESALE_MAX_PAY_HOURS)) {
+    toast(`付款期限請輸入 1～${PRESALE_MAX_PAY_HOURS} 小時`, 'danger');
+    return;
+  }
+  withBusy(e.currentTarget.querySelector('button'), async () => {
+    try {
+      await api.setPresalePayHours(hours);
+      toast(`預購付款期限已設為 ${hours} 小時(之後送出的預購單適用)`, 'success');
+    } catch (err) {
+      toast(errorText(err), 'danger');
+    }
+  });
 });
 
 $('#logout').addEventListener('click', async () => {
@@ -1036,37 +1186,51 @@ function renderAll() {
 
 requireStaff('staff', (p) => {
   me = p;
+  const onlyPresale = presaleOnly(p);
   // 預設開啟提示音：瀏覽器若仍要求先互動，第一次點擊畫面時會自動開啟
   unlockAudio();
   $('#who').textContent = `${p.displayName}(${ROLE_LABEL[p.role]})`;
   $('#admin-link').hidden = !hasRole(p, 'manager');
-  selectTab(store.get('tab-stall-tab', 'board'));
+  // 預購主管：只有看板(只顯示預購單)，沒有現場點餐、收件匣、取餐核對
+  if (onlyPresale) {
+    for (const tab of $$('.tab')) tab.hidden = tab.dataset.tab !== 'board';
+    $('.tabs--bar').hidden = true;
+  }
+  $('#presale-tools').hidden = !canPresale(p);
+  selectTab(onlyPresale ? 'board' : store.get('tab-stall-tab', 'board'));
   setMobileCol(mobileCol);
 
   api.watchSettings((s) => {
     settings = s;
-    $('#accepting').checked = !!s.acceptingPreorders;
+    renderModeSwitch();
+    const hoursInput = $('#presale-tools').hours;
+    if (document.activeElement !== hoursInput) hoursInput.value = Number(s.presalePayHours) || PRESALE_PAY_HOURS;
     renderAll();
   });
   api.watchMenu((items) => {
     menu = items;
     renderAll();
   });
+  api.watchPresaleStats((st) => {
+    presaleStats = st;
+  });
   api.watchTodayOrders((list) => {
     orders = list;
     detectNewOrders();
-    resolveReplies();
+    if (!onlyPresale) resolveReplies();
     renderBoard();
     if ($('#pickup-q').value) renderPickup();
-  });
-  api.watchInbox((list) => {
-    inbox = list;
-    renderInbox();
-  });
+  }, { presaleOnly: onlyPresale });
+  if (!onlyPresale) {
+    api.watchInbox((list) => {
+      inbox = list;
+      renderInbox();
+    });
+  }
 
   // 每 30 秒更新經過時間與逾時提醒
   setInterval(renderBoard, 30000);
 
   // 攤位主管以上登入時，確保營業設定文件存在(安全規則需要讀取它)
   if (hasRole(p, 'manager')) api.ensureSettings().catch((err) => console.warn(err));
-});
+}, { allowPresale: true });

@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,add_photo_alternate,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,check_circle,chevron_left,chevron_right,close,content_copy,delete,done_all,download,edit,error,expand_more,fullscreen,group,image,inbox,info,inventory_2,language,link_off,login,logout,near_me,notifications,notifications_active,notifications_off,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,swap_horiz,sync,timer,tune,tv,undo,upload,view_kanban,visibility,volume_up,warning,zoom_in,zoom_out&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,add_photo_alternate,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,chat,check,check_circle,chevron_left,chevron_right,close,content_copy,delete,done_all,download,edit,error,event,expand_more,fullscreen,group,image,inbox,info,inventory_2,language,link_off,login,logout,near_me,notifications,notifications_active,notifications_off,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,swap_horiz,sync,timer,tune,tv,undo,upload,view_kanban,visibility,volume_up,warning,zoom_in,zoom_out&display=block">
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/components.css">
@@ -102,6 +102,9 @@
         <label class="switch"><input type="checkbox" name="bannerActive"><span>顯示跑馬燈(點餐頁標題列下方)</span></label>
         <label class="field"><span class="field__label">跑馬燈內容</span>
           <input class="input" name="bannerText" maxlength="80" placeholder="例如：雞蛋糕 14:00 前暫停供應"></label>
+        <label class="switch"><input type="checkbox" name="presaleBannerActive"><span>預購模式顯示跑馬燈</span></label>
+        <label class="field"><span class="field__label">預購模式的跑馬燈內容</span>
+          <input class="input" name="presaleBannerText" maxlength="80" placeholder="例如：預購至 10/20 截止"></label>
 
         <h2 class="section-title">引導我去攤位</h2>
         <label class="switch"><input type="checkbox" name="guideActive"><span>在訂單進度頁顯示「引導我去攤位」</span></label>
@@ -130,7 +133,14 @@
         </div>
 
         <h2 class="section-title">預點</h2>
-        <label class="switch"><input type="checkbox" name="acceptingPreorders"><span>接受預點</span></label>
+        <fieldset class="field" style="border:none;padding:0;margin:0">
+          <legend class="field__label">平台模式(與攤位營運頁的三段滑鈕相同)</legend>
+          <div class="radio-group">
+            <label class="radio-chip"><input type="radio" name="orderMode" value="off"><span>關閉</span></label>
+            <label class="radio-chip"><input type="radio" name="orderMode" value="presale"><span>預購</span></label>
+            <label class="radio-chip"><input type="radio" name="orderMode" value="open"><span>點餐</span></label>
+          </div>
+        </fieldset>
         <label class="field"><span class="field__label">單筆預點數量上限(件)</span>
           <input class="input" name="maxItemsPerOrder" type="number" min="1" max="50" required>
           <span class="field__hint">超過上限的預點會自動拒絕，並通知收件匣</span></label>
@@ -139,6 +149,25 @@
           <input class="input" name="pickupReminderMinutes" type="number" min="1" max="180" required></label>
         <label class="field"><span class="field__label">付款方式(用頓號、分隔)</span>
           <input class="input" name="paymentMethods" required></label>
+
+        <h2 class="section-title">預購</h2>
+        <label class="field"><span class="field__label">付款對象(顧客端顯示「請於 N 小時內以現金或園遊券向 ○○ 付款」)</span>
+          <input class="input" name="presaleTeacher" maxlength="20" required></label>
+        <div class="row">
+          <label class="field"><span class="field__label">付款期限(小時，1～48)</span>
+            <input class="input" name="presalePayHours" type="number" min="1" max="48" step="1" required></label>
+          <label class="field"><span class="field__label">每張預購單最多幾件(空白為不限制)</span>
+            <input class="input" name="presaleMaxItems" type="number" min="1" max="50" step="1"></label>
+        </div>
+        <label class="field"><span class="field__label">預購的個資同意文字</span>
+          <textarea class="textarea" name="presaleConsentText" maxlength="300" required></textarea></label>
+        <div class="field">
+          <span class="field__label">取餐時段(只填開始時間為時間點；開始、結束都填為時間區間；名額空白為不限制)</span>
+          <div id="slot-editor" class="slot-editor"></div>
+          <div><button id="slot-add" class="btn btn--sm" type="button">
+            <span class="material-symbols-rounded icon icon--sm" aria-hidden="true">add</span>新增時段</button></div>
+          <span class="field__hint">名額只計算已付款的預購單。刪除已有訂單的時段時，那些訂單會顯示沒有時段。</span>
+        </div>
 
         <h2 class="section-title">通知</h2>
         <label class="field"><span class="field__label">常用訊息(一行一則)</span>
@@ -154,6 +183,9 @@
           <fieldset class="tr-box__lang">
             <legend class="field__label">英文</legend>
             <label class="field"><span class="field__hint">跑馬燈內容</span><input class="input" name="tr_en_bannerText" maxlength="200"></label>
+            <label class="field"><span class="field__hint">預購模式的跑馬燈內容</span><input class="input" name="tr_en_presaleBannerText" maxlength="200"></label>
+            <label class="field"><span class="field__hint">預購付款對象</span><input class="input" name="tr_en_presaleTeacher" maxlength="60"></label>
+            <label class="field"><span class="field__hint">預購的個資同意文字</span><textarea class="textarea" name="tr_en_presaleConsentText" maxlength="600"></textarea></label>
             <label class="field"><span class="field__hint">個資同意文字</span><textarea class="textarea" name="tr_en_consentText" maxlength="600"></textarea></label>
             <label class="field"><span class="field__hint">常用訊息(一行一則，順序與中文相同)</span><textarea class="textarea" name="tr_en_messageTemplates"></textarea></label>
             <label class="field"><span class="field__hint">簡訊範本(必須保留 {no}，可用 {surname})</span><textarea class="textarea" name="tr_en_smsTemplate" maxlength="400"></textarea></label>
@@ -161,6 +193,9 @@
           <fieldset class="tr-box__lang">
             <legend class="field__label">日文</legend>
             <label class="field"><span class="field__hint">跑馬燈內容</span><input class="input" name="tr_ja_bannerText" maxlength="200"></label>
+            <label class="field"><span class="field__hint">預購模式的跑馬燈內容</span><input class="input" name="tr_ja_presaleBannerText" maxlength="200"></label>
+            <label class="field"><span class="field__hint">預購付款對象</span><input class="input" name="tr_ja_presaleTeacher" maxlength="60"></label>
+            <label class="field"><span class="field__hint">預購的個資同意文字</span><textarea class="textarea" name="tr_ja_presaleConsentText" maxlength="600"></textarea></label>
             <label class="field"><span class="field__hint">個資同意文字</span><textarea class="textarea" name="tr_ja_consentText" maxlength="600"></textarea></label>
             <label class="field"><span class="field__hint">常用訊息(一行一則，順序與中文相同)</span><textarea class="textarea" name="tr_ja_messageTemplates"></textarea></label>
             <label class="field"><span class="field__hint">簡訊範本(必須保留 {no}，可用 {surname})</span><textarea class="textarea" name="tr_ja_smsTemplate" maxlength="400"></textarea></label>
@@ -227,13 +262,19 @@
       </div>
       <div class="card stack">
         <h2 class="section-title">訂單編號</h2>
-        <p class="muted text-sm">把預點(A)與現場(B)的編號從 001 重新開始，適合在新的一天營業前使用。已存在的訂單不受影響；已結束訂單的電話綁定會一併清除(進行中的訂單不清除)。收件匣的所有訊息也會一併刪除(刪除前會先存到試算表的「收件匣」工作表)。</p>
+        <p class="muted text-sm">預點 A、現場 B、預購 C。下方按鈕把預點(A)與現場(B)的編號從 001 重新開始，適合在新的一天營業前使用。已存在的訂單不受影響；已結束訂單的電話綁定會一併清除(進行中的訂單不清除)。收件匣的所有訊息也會一併刪除(刪除前會先存到試算表的「收件匣」工作表)。</p>
         <div><button id="reset-counters" class="btn btn--danger" type="button">
           <span class="material-symbols-rounded icon" aria-hidden="true">restart_alt</span>編號歸零</button></div>
       </div>
       <div class="card stack">
+        <h2 class="section-title">預購編號(C)</h2>
+        <p class="muted text-sm">把預購(C)的編號從 001 重新開始，不影響 A、B。預購單從送出到活動當天可能隔好幾天，請在上一批預購單都結束後再歸零，以免出現重複的編號。</p>
+        <div><button id="reset-counter-c" class="btn btn--danger" type="button">
+          <span class="material-symbols-rounded icon" aria-hidden="true">restart_alt</span>C 編號歸零</button></div>
+      </div>
+      <div class="card stack">
         <h2 class="section-title">已售出數量</h2>
-        <p class="muted text-sm">把所有品項的已售出數量歸零。有設定數量上限的品項會同時解除「已售完」；手動設定的售完狀態不變。</p>
+        <p class="muted text-sm">把所有品項的已售出數量歸零，預購的已售數量也一併歸零(時段名額不變)。有設定數量上限的品項會同時解除「已售完」；手動設定的售完狀態不變。</p>
         <div><button id="reset-sold" class="btn btn--danger" type="button">
           <span class="material-symbols-rounded icon" aria-hidden="true">restart_alt</span>重設已售出數量</button></div>
       </div>
