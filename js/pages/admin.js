@@ -1067,11 +1067,28 @@ $('#account-rows').addEventListener('click', (e) => {
 
 // ===== 系統 =====
 $('#reset-counters').addEventListener('click', async (e) => {
-  if (!await confirmDialog('編號歸零', '確定要讓訂單編號從 001 重新開始嗎？', { confirmLabel: '歸零', danger: true })) return;
+  if (!await confirmDialog('編號歸零', '確定要讓訂單編號(A、B)從 001 重新開始嗎？收件匣的所有訊息也會一併刪除。', { confirmLabel: '歸零', danger: true })) return;
   withBusy(e.currentTarget, async () => {
     try {
+      // 刪除收件匣前先存到試算表；同步失敗時再確認一次
+      const synced = await api.syncSheetNow();
+      if (!synced && !await confirmDialog('無法先存到試算表', '目前無法立即同步到試算表，最近 1 分鐘內收到的收件匣訊息可能沒有存到。仍要歸零並刪除收件匣嗎？', { confirmLabel: '仍要歸零', danger: true })) return;
       await api.resetCounters();
-      toast('編號已歸零', 'success');
+      toast('編號已歸零，收件匣已清空', 'success');
+    } catch (err) {
+      toast(errorText(err), 'danger');
+    }
+  });
+});
+
+// 重設所有品項的已售出數量(雙重確認)
+$('#reset-sold').addEventListener('click', async (e) => {
+  if (!await confirmDialog('重設已售出數量', '確定要把所有品項的已售出數量歸零嗎？', { confirmLabel: '下一步', danger: true })) return;
+  if (!await confirmDialog('再次確認', '歸零後無法復原，訂單與收支紀錄不受影響。確定要重設嗎？', { confirmLabel: '確定重設', danger: true })) return;
+  withBusy(e.currentTarget, async () => {
+    try {
+      const n = await api.resetSoldCounts();
+      toast(`已重設 ${n} 個品項的已售出數量`, 'success');
     } catch (err) {
       toast(errorText(err), 'danger');
     }

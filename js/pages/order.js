@@ -514,7 +514,8 @@ function renderCartBar(viewName) {
   const count = countItems(cart.lines);
   const { total } = priceLines(cart.lines, itemsById());
   $('#cart-bar').hidden = viewName !== 'menu' || count === 0;
-  $('#cart-bar-text').textContent = t('order.cartBar', { count: itemCount(count), total: money(total) });
+  // 只顯示「查看訂單」與金額(不顯示件數)
+  $('#cart-bar-text').textContent = t('order.cartBar', { total: menuMoney(total) });
 }
 
 // ===== 品項詳細頁 =====
@@ -743,24 +744,16 @@ $('#detail-add').addEventListener('click', (e) => {
     return;
   }
   const wasEmpty = countItems(cart.lines) === 0;
-  const withOptions = hasOptions(item);
   addToCart(item.id, sel, detail.qty);
-  // 按鈕微退色並顯示打勾「已加入」：沒有選項的品項約 0.5 秒後回到菜單；有選項的 1.5 秒後復原並清空選擇
+  // 按鈕微退色並顯示打勾「已加入」，約 0.5 秒後回到菜單(不論有沒有選項)，回到原本的捲動位置
   btn.classList.add('is-added');
   btn.innerHTML = `${icon('check')}${escapeHtml(t('order.added'))}`;
   setTimeout(() => {
     btn.classList.remove('is-added');
-    if (!withOptions) {
-      if (pushedFromMenu) history.back();
-      else location.replace('#');
-      setTimeout(() => bumpFeedback(item.id, wasEmpty), 60);
-      return;
-    }
-    detail.qty = 1;
-    detail.sel = new Set();
-    renderGroups(item);
-    updateDetailBar(item);
-  }, withOptions ? 1500 : 500);
+    if (pushedFromMenu) history.back();
+    else location.replace('#');
+    setTimeout(() => bumpFeedback(item.id, wasEmpty), 60);
+  }, 500);
 });
 
 // 標題列高度(捲動定位時避開)
@@ -853,6 +846,26 @@ form.addEventListener('input', () => {
   store.set(FORM_KEY, { surname: form.surname.value, title: form.elements.title.value, phone: form.phone.value });
 });
 
+// 取餐聯絡資料的欄位檢查：標示沒填的欄位並捲到聯絡資料區塊
+function markInvalid(els) {
+  form.classList.add('is-error');
+  els.forEach((el) => el.classList.add('is-invalid'));
+  form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  return undefined;
+}
+
+// 修改欄位後移除該欄位的紅框；全部填好時「必填」標籤恢復灰色
+form.addEventListener('input', (e) => {
+  e.target.closest('.is-invalid')?.classList.remove('is-invalid');
+  if (e.target.name === 'title') form.querySelector('.name-row__title').classList.remove('is-invalid');
+  if (!form.querySelector('.is-invalid')) form.classList.remove('is-error');
+});
+form.addEventListener('change', (e) => {
+  if (e.target.name === 'title') form.querySelector('.name-row__title').classList.remove('is-invalid');
+  if (e.target.name === 'consent') form.querySelector('.check').classList.remove('is-invalid');
+  if (!form.querySelector('.is-invalid')) form.classList.remove('is-error');
+});
+
 // 錯誤訊息；code 為技術代碼(送出被系統拒絕時)，以小灰字顯示在訊息下方，方便回報問題
 function formError(message, code = '') {
   const el = $('#form-error');
@@ -883,10 +896,13 @@ async function submit() {
     $('#sub-box').scrollIntoView({ behavior: 'smooth', block: 'start' });
     return undefined;
   }
-  if (!surname) return formError(t('order.errSurname'));
-  if (!TITLES.includes(title)) return formError(t('order.errTitle'));
-  if (!isValidPhone(phone)) return formError(t('order.errPhone'));
-  if (!form.consent.checked) return formError(t('order.errConsent'));
+  // 欄位沒填或格式不對：「必填」標籤變紅、該欄位加紅框，不顯示訊息框
+  const invalid = [];
+  if (!surname) invalid.push(form.surname);
+  if (!TITLES.includes(title)) invalid.push(form.querySelector('.name-row__title'));
+  if (!isValidPhone(phone)) invalid.push(form.phone);
+  if (!form.consent.checked) invalid.push(form.querySelector('.check'));
+  if (invalid.length) return markInvalid(invalid);
 
   const map = itemsById();
   const count = countItems(cart.lines);

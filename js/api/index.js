@@ -28,6 +28,8 @@
 //   adminUpdateOrder(id, patch) / adminDeleteOrder(id) / adminCreateManual(data)
 //   listAccounts() / createAccount(data) / updateAccount(uid, patch) / deleteAccount(uid)
 //   resetCounters() / resetDemo()(僅展示模式)
+//   syncSheetNow() / resetSoldCounts()  立即同步試算表、重設已售出數量
+//   revertOrder(orderId)  退回上一個狀態
 //   setBannerLang(id, lang, dataUrl)  英文、日文版橫幅圖片(null 為刪除)
 //   getPhoneLock(phone) / releasePhoneLock(phone)  電話綁定查詢與解除
 

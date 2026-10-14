@@ -227,9 +227,15 @@
       </div>
       <div class="card stack">
         <h2 class="section-title">訂單編號</h2>
-        <p class="muted text-sm">把預點(A)與現場(B)的編號從 001 重新開始，適合在新的一天營業前使用。已存在的訂單不受影響；已結束訂單的電話綁定會一併清除(進行中的訂單不清除)。</p>
+        <p class="muted text-sm">把預點(A)與現場(B)的編號從 001 重新開始，適合在新的一天營業前使用。已存在的訂單不受影響；已結束訂單的電話綁定會一併清除(進行中的訂單不清除)。收件匣的所有訊息也會一併刪除(刪除前會先存到試算表的「收件匣」工作表)。</p>
         <div><button id="reset-counters" class="btn btn--danger" type="button">
           <span class="material-symbols-rounded icon" aria-hidden="true">restart_alt</span>編號歸零</button></div>
+      </div>
+      <div class="card stack">
+        <h2 class="section-title">已售出數量</h2>
+        <p class="muted text-sm">把所有品項的已售出數量歸零。有設定數量上限的品項會同時解除「已售完」；手動設定的售完狀態不變。</p>
+        <div><button id="reset-sold" class="btn btn--danger" type="button">
+          <span class="material-symbols-rounded icon" aria-hidden="true">restart_alt</span>重設已售出數量</button></div>
       </div>
       <div class="card stack">
         <h2 class="section-title">未完成訂單</h2>

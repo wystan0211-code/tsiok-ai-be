@@ -525,6 +525,58 @@ export const api = {
     await updateDoc(ref('orders', orderId), { status: 'ready', readyAt: serverTimestamp(), updatedAt: serverTimestamp() });
   }),
 
+  // 退回上一個狀態：已取餐→可取餐、製作中→等待接單(加回庫存)、已拒絕/已取消→等待接單
+  // 可取餐→製作中沿用 undoReady；已取餐→可取餐只有管理員能在畫面上操作
+  revertOrder: (orderId) => guard(async () => {
+    const oRef = ref('orders', orderId);
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(oRef);
+      if (!snap.exists()) throw new ApiError('not-found');
+      const o = snap.data();
+      if (o.status === 'picked') {
+        tx.update(oRef, { status: 'ready', pickedAt: deleteField(), payment: deleteField(), updatedAt: serverTimestamp() });
+        return;
+      }
+      if (o.status === 'ready') {
+        tx.update(oRef, { status: 'accepted', readyAt: null, updatedAt: serverTimestamp() });
+        return;
+      }
+      const toPending = {
+        status: 'pending', lines: deleteField(), total: deleteField(), acceptedAt: deleteField(),
+        establishedAt: deleteField(), shortage: deleteField(), shortageReply: deleteField(), updatedAt: serverTimestamp(),
+      };
+      // 已修改過的明細保留下來，重新接單時依此計價
+      if (o.lines?.length) {
+        toPending.items = o.lines.map((l) => ({ itemId: l.itemId, qty: l.qty, option: l.option ?? null, ...(l.sel?.length ? { sel: l.sel } : {}) }));
+        toPending.itemCount = countItems(o.lines);
+      }
+      if (o.status === 'accepted') {
+        // 加回庫存
+        const itemsById = await readItems(tx, o.lines || []);
+        const need = {};
+        for (const l of o.lines || []) need[l.itemId] = (need[l.itemId] || 0) + l.qty;
+        for (const [id, qty] of Object.entries(need)) {
+          const item = itemsById[id];
+          if (!item) continue;
+          const soldCount = Math.max(0, (item.soldCount || 0) - qty);
+          const patch = { soldCount, updatedAt: serverTimestamp() };
+          if (item.stockLimit != null && soldCount < item.stockLimit) patch.soldOut = false;
+          tx.update(ref('items', id), patch);
+        }
+        tx.update(oRef, toPending);
+        return;
+      }
+      if (['rejected', 'cancelled'].includes(o.status)) {
+        tx.update(oRef, {
+          ...toPending, voided: deleteField(), rejectReason: deleteField(), rejectReasonTr: deleteField(),
+          cancelReason: deleteField(), cancelReasonTr: deleteField(), cancelledBy: deleteField(),
+        });
+        return;
+      }
+      throw new ApiError('bad-state');
+    });
+  }),
+
   undoReady: (orderId) => guard(async () => {
     await updateDoc(ref('orders', orderId), { status: 'accepted', readyAt: null, updatedAt: serverTimestamp() });
   }),
@@ -899,10 +951,43 @@ export const api = {
     return ids.length;
   }),
 
+  // 編號歸零：A、B 從 001 開始，清除已結束訂單的電話綁定，並刪除所有收件匣訊息
+  // 刪除前先請 Apps Script 立即同步到試算表；同步失敗時回傳 { synced: false }，由頁面決定是否繼續
+  syncSheetNow: () => guard(async () => {
+    try {
+      await callScript('sync');
+      return true;
+    } catch (err) {
+      console.warn('立即同步失敗', err);
+      return false;
+    }
+  }),
+
   resetCounters: () => guard(async () => {
     await setDoc(ref('counters', 'A'), { value: 0, lastOrderId: null });
     await setDoc(ref('counters', 'B'), { value: 0, lastOrderId: null });
     await cleanupPhoneLocks();
+    const inbox = await getDocs(collection(db, 'inbox'));
+    for (let i = 0; i < inbox.docs.length; i += 400) {
+      const batch = writeBatch(db);
+      inbox.docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  }),
+
+  // 重設所有品項的已售出數量(有設定數量上限的品項同時解除售完)
+  resetSoldCounts: () => guard(async () => {
+    const snap = await getDocs(collection(db, 'items'));
+    for (let i = 0; i < snap.docs.length; i += 400) {
+      const batch = writeBatch(db);
+      snap.docs.slice(i, i + 400).forEach((d) => {
+        const patch = { soldCount: 0, updatedAt: serverTimestamp() };
+        if (d.data().stockLimit != null) patch.soldOut = false;
+        batch.update(d.ref, patch);
+      });
+      await batch.commit();
+    }
+    return snap.size;
   }),
 
   async resetDemo() {

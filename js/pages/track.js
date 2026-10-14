@@ -20,7 +20,7 @@ import {
   beep, vibrate, unlockAudio, startAlarm, stopAlarm,
 } from '../core/sound.js';
 import {
-  isIOS, isAndroid, isStandalone, isLineInApp,
+  isIOS, isStandalone, isLineInApp,
 } from '../core/env.js';
 import { goTo, pageReady } from '../core/transition.js';
 
@@ -220,9 +220,10 @@ function renderNotify() {
     box.innerHTML = `<p class="row">${icon('notifications_off')}<strong>${t('track.pushTitle')}</strong></p><p class="text-sm" style="color:var(--color-danger)">${escapeHtml(t('track.lineTip'))}</p>`;
     return;
   }
+  // 已開啟取餐通知：黃底，只顯示鈴鐺與「已開啟取餐通知」
+  box.classList.toggle('notify--on', !!order.pushEnabled);
   if (order.pushEnabled) {
-    box.innerHTML = `<p class="row">${icon('notifications_active')}<strong>${t('track.pushOn')}</strong></p>
-      ${isAndroid() ? `<p class="muted text-sm">${escapeHtml(t('track.batteryTip'))}</p>` : ''}`;
+    box.innerHTML = `<p class="row">${icon('notifications_active')}<strong>${t('track.pushOn')}</strong></p>`;
     return;
   }
   if (!IS_DEMO && !(isIOS() && !isStandalone()) && 'Notification' in window && Notification.permission === 'denied') {
@@ -408,7 +409,8 @@ function renderOrder() {
   } else if (order.status === 'cancelled') {
     alertBox.innerHTML = `<div class="banner">${icon('info')}<p>${t(order.voided ? 'track.voided' : 'track.cancelled')}</p></div>`;
   } else if (order.status === 'ready') {
-    alertBox.innerHTML = `<div class="banner">${icon('notifications_active')}<p><strong>${t('track.readyStrong')}</strong> ${escapeHtml(t('track.readyBody', { no: order.no }))}</p></div>`;
+    // 「餐點已完成！」一行，說明文字獨立在第二行
+    alertBox.innerHTML = `<div class="banner">${icon('notifications_active')}<div><p><strong>${t('track.readyStrong')}</strong></p><p>${escapeHtml(t('track.readyBody', { no: order.no }))}</p></div></div>`;
   } else alertBox.innerHTML = '';
 
   renderShortage();

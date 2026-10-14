@@ -2559,7 +2559,24 @@ body.is-viewer-open {
 }
 
 .order-hero.is-breathing {
-  animation: breathe 2s ease-in-out infinite;
+  position: relative;
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+/* 可取餐：號碼卡緩慢放大縮小，外圍細框一圈一圈往外擴散 */
+.order-hero.is-breathing::before,
+.order-hero.is-breathing::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border: 2px solid var(--color-primary-deep);
+  border-radius: inherit;
+  pointer-events: none;
+  animation: ripple 2.4s ease-out infinite;
+}
+
+.order-hero.is-breathing::after {
+  animation-delay: 1.2s;
 }
 
 @keyframes breathe {
@@ -2569,7 +2586,19 @@ body.is-viewer-open {
   }
 
   50% {
-    transform: scale(1.03);
+    transform: scale(1.05);
+  }
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+
+  100% {
+    transform: scale(1.12, 1.25);
+    opacity: 0;
   }
 }
 
@@ -2606,7 +2635,9 @@ body.is-viewer-open {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .order-hero.is-breathing {
+  .order-hero.is-breathing,
+  .order-hero.is-breathing::before,
+  .order-hero.is-breathing::after {
     animation: none;
   }
 }
@@ -3261,4 +3292,56 @@ body.is-viewer-open {
 
 .phone-lock__result dd {
   margin: 0;
+}
+
+/* 取餐聯絡資料：「必填」標籤，欄位沒填時變紅 */
+#checkout-form .sub-box__head {
+  align-items: center;
+}
+
+#checkout-form.is-error .contact-req {
+  background: var(--color-danger);
+  color: #ffffff;
+}
+
+/* 沒填的欄位：紅框 */
+.input.is-invalid {
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 1px var(--color-danger);
+}
+
+.name-row__title.is-invalid .radio-chip span {
+  border-color: var(--color-danger);
+}
+
+.check.is-invalid {
+  color: var(--color-danger);
+}
+
+.check.is-invalid input {
+  outline: 2px solid var(--color-danger);
+  outline-offset: 1px;
+}
+
+/* 欄位以外的訊息框：紅底實心白字(白字對比 6.5:1)；錯誤代碼為白色 80% */
+.banner--solid-danger {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  color: #ffffff;
+}
+
+.banner--solid-danger .form-error__code {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* 訂單進度頁：已開啟取餐通知時改為黃底 */
+#o-notify.notify--on {
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary);
+}
+
+/* 測試提示音：縮小、置中 */
+.sound-test {
+  display: flex;
+  justify-content: center;
 }

@@ -64,6 +64,7 @@ const paymentMethods = () => settings?.paymentMethods?.length ? settings.payment
 // 只設定一種付款方式時，不需要顯示或選擇付款方式
 const singlePayment = () => paymentMethods().length === 1;
 const byId = (id) => orders.find((o) => o.id === id);
+let me = null; // 目前登入的攤位人員
 
 // ===== 分頁 =====
 function selectTab(name) {
@@ -112,7 +113,8 @@ function cardHtml(o, forceOpen = false) {
       <button class="btn btn--primary" data-act="ready">${icon('notifications_active')}完成，通知取餐</button>
       <button class="btn" data-act="message">${icon('chat')}傳訊息</button>
       ${o.type === 'preorder' ? `<button class="btn" data-act="shortage">${icon('inventory_2')}缺貨處理</button>` : ''}
-      <button class="btn btn--ghost" data-act="picked">${icon('done_all')}已取餐</button>`;
+      <button class="btn btn--ghost" data-act="picked">${icon('done_all')}已取餐</button>
+      <button class="btn btn--ghost" data-act="revert">${icon('undo')}退回等待接單</button>`;
   } else if (o.status === 'ready') {
     // 取餐後一定要按「已取餐」才會結束訂單、解除電話綁定，所以放大並放在最前面
     actions = `<button class="btn btn--primary btn--lg btn--block order-card__pick" data-act="picked">${icon('done_all')}已取餐 / 結帳</button>
@@ -120,7 +122,12 @@ function cardHtml(o, forceOpen = false) {
       ${o.type === 'preorder' ? `<button class="btn" data-act="shortage">${icon('inventory_2')}缺貨處理</button>` : ''}
       <button class="btn" data-act="message">${icon('chat')}傳訊息</button>
       <button class="btn" data-act="sms">${icon('sms')}簡訊通知</button>
-      <button class="btn btn--ghost" data-act="undo">${icon('undo')}退回製作中</button>`;
+      <button class="btn btn--ghost" data-act="revert">${icon('undo')}退回製作中</button>`;
+  } else if (o.status === 'picked' && hasRole(me, 'admin')) {
+    // 已取餐退回可取餐：只有管理員能操作
+    actions = `<button class="btn btn--ghost" data-act="revert">${icon('undo')}退回可取餐</button>`;
+  } else if (['rejected', 'cancelled'].includes(o.status) && !o.deleted) {
+    actions = `<button class="btn btn--ghost" data-act="revert">${icon('undo')}退回等待接單</button>`;
   }
 
   const since = o.status === 'ready' ? o.readyAt : o.createdAt;
@@ -247,7 +254,7 @@ document.addEventListener('click', (e) => {
   if (!o) return;
   const handlers = {
     accept: doAccept, reject: doReject, ready: doReady, picked: doPicked,
-    undo: doUndo, message: doMessage, sms: doSms,
+    revert: doRevert, message: doMessage, sms: doSms,
     shortage: doShortage, 'short-timeout': doShortageTimeout,
     qr: async (order) => showPickupTicket(order.id, order.no, order.total),
   };
@@ -326,10 +333,17 @@ async function doReady(o) {
   }
 }
 
-async function doUndo(o) {
+// 退回上一個狀態(每次都要再確認)
+const REVERT_TO = { picked: '可取餐', ready: '製作中', accepted: '等待接單', rejected: '等待接單', cancelled: '等待接單' };
+async function doRevert(o) {
+  const to = REVERT_TO[o.status];
+  if (!to) return;
+  const note = o.status === 'accepted' ? '已扣除的庫存數量會加回去。'
+    : (o.status === 'picked' ? '這筆收款會從今日收支中移除。' : '');
+  if (!await confirmDialog(`退回 ${o.no}`, `確定要把 ${o.no} 退回「${to}」嗎？${note}`, { confirmLabel: '退回' })) return;
   try {
-    await api.undoReady(o.id);
-    toast(`${o.no} 已退回製作中`);
+    await api.revertOrder(o.id);
+    toast(`${o.no} 已退回${to}`);
   } catch (err) {
     toast(errorText(err), 'danger');
   }
@@ -755,9 +769,9 @@ function renderPosCart() {
 
   for (const b of $$('[data-mode]')) b.setAttribute('aria-pressed', String(b.dataset.mode === pos.mode));
   $('#pos-later-fields').hidden = pos.mode !== 'later';
-  $('#pos-mode-hint').textContent = pos.mode === 'later'
-    ? '先付款，產生取餐編號與 QR code，顧客可掃描追蹤進度並開啟通知。'
-    : '當場付款並取餐，直接記入今日收支。';
+  // 稍後取餐不顯示說明文字
+  $('#pos-mode-hint').textContent = pos.mode === 'later' ? '' : '當場付款並取餐，直接記入今日收支。';
+  $('#pos-mode-hint').hidden = pos.mode === 'later';
   $('#pos-submit-text').textContent = pos.mode === 'later' ? '結帳並產生取餐編號' : '結帳記帳';
 
   const methods = paymentMethods();
@@ -1021,6 +1035,7 @@ function renderAll() {
 }
 
 requireStaff('staff', (p) => {
+  me = p;
   // 預設開啟提示音：瀏覽器若仍要求先互動，第一次點擊畫面時會自動開啟
   unlockAudio();
   $('#who').textContent = `${p.displayName}(${ROLE_LABEL[p.role]})`;

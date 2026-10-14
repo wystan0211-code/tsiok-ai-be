@@ -426,6 +426,40 @@ export const api = {
     commit();
   },
 
+  // 退回上一個狀態(與正式版相同)
+  async revertOrder(orderId) {
+    await delay();
+    requireRole(STAFF);
+    const o = getOrder(orderId);
+    const now = Date.now();
+    if (o.status === 'picked') {
+      Object.assign(o, { status: 'ready', updatedAt: now });
+      delete o.pickedAt;
+      delete o.payment;
+    } else if (o.status === 'ready') {
+      Object.assign(o, { status: 'accepted', readyAt: null, updatedAt: now });
+    } else if (['accepted', 'rejected', 'cancelled'].includes(o.status)) {
+      if (o.status === 'accepted') {
+        for (const l of o.lines || []) {
+          const item = db.items[l.itemId];
+          if (!item) continue;
+          item.soldCount = Math.max(0, (item.soldCount || 0) - l.qty);
+          if (item.stockLimit != null && item.soldCount < item.stockLimit) item.soldOut = false;
+        }
+      }
+      if (o.lines?.length) {
+        o.items = o.lines.map((l) => ({ itemId: l.itemId, qty: l.qty, option: l.option ?? null, ...(l.sel?.length ? { sel: l.sel } : {}) }));
+        o.itemCount = countItems(o.lines);
+      }
+      for (const k of ['lines', 'total', 'acceptedAt', 'establishedAt', 'shortage', 'shortageReply', 'voided',
+        'rejectReason', 'rejectReasonTr', 'cancelReason', 'cancelReasonTr', 'cancelledBy']) delete o[k];
+      Object.assign(o, { status: 'pending', updatedAt: now });
+    } else {
+      throw new ApiError('bad-state');
+    }
+    commit();
+  },
+
   async undoReady(orderId) {
     await delay();
     requireRole(STAFF);
@@ -837,11 +871,28 @@ export const api = {
     return ids.length;
   },
 
+  async syncSheetNow() {
+    return true;
+  },
+
   async resetCounters() {
     requireRole(ADMIN);
     db.counters = { A: { value: 0 }, B: { value: 0 } };
     cleanupPhoneLocks();
+    db.inbox = {};
     commit();
+  },
+
+  async resetSoldCounts() {
+    await delay();
+    requireRole(ADMIN);
+    const items = Object.values(db.items);
+    for (const item of items) {
+      item.soldCount = 0;
+      if (item.stockLimit != null) item.soldOut = false;
+    }
+    commit();
+    return items.length;
   },
 
   async resetDemo() {

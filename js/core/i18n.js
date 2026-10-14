@@ -67,7 +67,7 @@ const DICT = {
   'order.increaseShort': ['增加', 'Add one', '1つ増やす'],
   'order.prep': ['約 {n} 分鐘', 'About {n} min', '約{n}分'],
   'order.left': ['剩 {n} 份', '{n} left', '残り{n}個'],
-  'order.cartBar': ['查看訂單 · {count} · {total}', 'View order · {count} · {total}', '注文を確認 · {count} · {total}'],
+  'order.cartBar': ['查看訂單 · {total}', 'View order · {total}', '注文を確認 · {total}'],
   'order.checkoutTitle': ['確認訂單', 'Review order', '注文内容の確認'],
   'order.qty': ['數量', 'Quantity', '数量'],
   'order.total': ['總金額', 'Total', '合計金額'],

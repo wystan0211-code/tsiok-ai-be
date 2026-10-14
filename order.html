@@ -159,7 +159,11 @@
       </section>
 
       <form id="checkout-form" class="card stack" novalidate>
-        <h2 class="section-title" data-i18n="order.contactTitle">取餐聯絡資料</h2>
+        <!-- 標題右側「必填」：欄位沒填時變紅 -->
+        <div class="sub-box__head">
+          <h2 class="section-title" data-i18n="order.contactTitle">取餐聯絡資料</h2>
+          <span class="og__req contact-req" data-i18n="detail.required">必填</span>
+        </div>
         <div class="name-row">
           <label class="field">
             <span class="field__label" data-i18n="order.surname">姓氏</span>
@@ -182,7 +186,8 @@
           <input type="checkbox" name="consent" required>
           <span id="consent-text"></span>
         </label>
-        <p id="form-error" class="banner banner--danger" hidden></p>
+        <!-- 欄位以外的訊息(售完、暫停接單、錯誤代碼等)：紅底白字 -->
+        <p id="form-error" class="banner banner--solid-danger" hidden></p>
       </form>
     </section>
   </main>
@@ -211,10 +216,7 @@
 
   <div id="info-bar" class="cart-bar detail-bar" hidden>
     <div class="cart-bar__inner">
-      <button id="submit-btn" class="btn btn--primary btn--lg btn--block press" type="submit" form="checkout-form">
-        <span class="material-symbols-rounded icon" aria-hidden="true">send</span>
-        <span data-i18n="order.submit">送出訂單</span>
-      </button>
+      <button id="submit-btn" class="btn btn--primary btn--lg btn--block press" type="submit" form="checkout-form" data-i18n="order.submit">送出訂單</button>
     </div>
   </div>
 
