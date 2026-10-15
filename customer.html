@@ -44,30 +44,40 @@
     <!-- 點餐中：左邊明細表格，右邊合計 -->
     <section id="cs-cart" class="cs-cart" hidden>
       <div class="cs-cart__list card">
-        <table class="cs-table">
-          <thead><tr><th data-i18n="screen.item">品項</th><th class="num" data-i18n="screen.qty">數量</th><th class="num" data-i18n="screen.subtotal">小計</th></tr></thead>
-          <tbody id="cs-lines"></tbody>
-        </table>
+        <!-- 明細可捲動；捲動時上下緣出現淡陰影，合計固定在最下方 -->
+        <div id="cs-scroll" class="cs-cart__scroll">
+          <table class="cs-table">
+            <thead><tr><th data-i18n="screen.item">品項</th><th class="num" data-i18n="screen.qty">數量</th><th class="num" data-i18n="screen.subtotal">小計</th></tr></thead>
+            <tbody id="cs-lines"></tbody>
+          </table>
+        </div>
+        <div class="cs-sum">
+          <p id="cs-count" class="cs-sum__count muted"></p>
+          <p class="cs-sum__label" data-i18n="screen.total">合計</p>
+          <p id="cs-total" class="cs-sum__total display-no"></p>
+        </div>
       </div>
-      <aside class="cs-cart__sum card">
-        <img class="cs-sum__logo" src="assets/brand/logo-horizontal.png" alt="九愛！買" width="640" height="260">
-        <p id="cs-count" class="muted"></p>
-        <p class="cs-sum__label" data-i18n="screen.total">合計</p>
-        <p id="cs-total" class="cs-sum__total display-no"></p>
+      <!-- 右欄：星星底紋 + 首頁同款斜向白底黑框商標帶 -->
+      <aside class="cs-cart__brand" aria-hidden="true">
+        <div class="cs-brand__pattern"></div>
+        <div class="cs-brand__band"><img class="cs-brand__logo" src="assets/brand/logo-band.webp" alt="" width="1910" height="844"></div>
       </aside>
     </section>
 
-    <!-- 結帳後：取餐編號(稍後取餐另顯示追蹤 QR code)，30 秒後回到待機 -->
+    <!-- 結帳後：取餐編號(稍後取餐另顯示追蹤 QR code)，20 秒後回到待機 -->
     <section id="cs-done" class="cs-done" hidden>
-      <div class="card cs-done__card">
-        <p id="cs-thanks" class="cs-done__thanks" data-i18n="screen.thanks">謝謝光臨</p>
-        <p class="muted" data-i18n="screen.no">取餐編號</p>
-        <p id="cs-no" class="display-no cs-done__no"></p>
-        <p id="cs-paid" class="muted"></p>
-      </div>
-      <div id="cs-qr-box" class="card cs-done__qr" hidden>
-        <div id="cs-qr" class="qr-box"></div>
-        <p class="text-sm" data-i18n="screen.scan">掃描 QR code 追蹤進度、開啟取餐通知</p>
+      <img class="cs-done__logo" src="assets/brand/logo-horizontal.png" alt="九愛！買" width="640" height="260">
+      <div class="cs-done__row">
+        <div class="card cs-done__card">
+          <p id="cs-thanks" class="cs-done__thanks" data-i18n="screen.thanks">謝謝光臨</p>
+          <p class="muted" data-i18n="screen.no">取餐編號</p>
+          <p id="cs-no" class="display-no cs-done__no"></p>
+          <p id="cs-paid" class="muted"></p>
+        </div>
+        <div id="cs-qr-box" class="card cs-done__qr" hidden>
+          <div id="cs-qr" class="qr-box"></div>
+          <p class="text-sm" data-i18n="screen.scan">掃描 QR code 追蹤進度、開啟取餐通知</p>
+        </div>
       </div>
     </section>
   </main>

@@ -13,7 +13,7 @@ showDemoBanner(IS_DEMO);
 
 const PIN_KEY = 'tab-screen-pin';
 const PING_MS = 60 * 1000;      // 每 1 分鐘回報一次「我還在」
-const DONE_MS = 30 * 1000;      // 結帳畫面 30 秒後回到待機
+const DONE_MS = 20 * 1000;      // 結帳畫面 20 秒後回到待機
 const SLIDE_MS = 5000;          // 待機輪播每 5 秒換一張
 
 let pin = '';
@@ -22,7 +22,7 @@ let pingTimer = 0;
 let doneTimer = 0;
 let screen = null;
 let lang = 'zh-Hant';
-let doneShownFor = '';          // 已顯示過的結帳畫面(避免 30 秒後又跳回來)
+let doneShownFor = '';          // 已顯示過的結帳畫面(避免 20 秒後又跳回來)
 let banners = [];
 
 // ===== 語言：依攤位設定套用靜態文字 =====
@@ -33,7 +33,8 @@ function applyLangTo(code) {
   for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n, {}, lang);
 }
 
-const money = (n) => `$ ${Number(n || 0).toLocaleString('zh-TW')}`;
+// 金額：全型＄，後面不留空格
+const money = (n) => `＄${Number(n || 0).toLocaleString('zh-TW')}`;
 
 // ===== 配對 =====
 function showPair(error = '') {
@@ -101,7 +102,7 @@ function render() {
   if (!screen) return;
   if (screen.lang !== lang) applyLangTo(screen.lang);
   let view = screen.state;
-  // 結帳畫面只顯示 30 秒
+  // 結帳畫面只顯示 20 秒
   if (view === 'done') {
     const key = `${screen.done?.no}|${screen.done?.at}`;
     const age = Date.now() - (screen.done?.at || 0);
@@ -139,7 +140,20 @@ function renderCart() {
   }).join('');
   $('#cs-count').textContent = t('screen.count', { n: screen.count || 0 }, lang);
   $('#cs-total').textContent = money(screen.total);
+  // 剛加入或修改的那一列不在畫面內時，自動捲到看得見的位置
+  const changed = [...document.querySelectorAll('#cs-lines tr.is-changed')].pop();
+  if (changed) changed.scrollIntoView({ block: 'nearest' });
+  updateScrollShadow();
 }
+
+// 捲動陰影：往下捲過時標題列下方出現陰影；下面還有品項時合計上方出現陰影
+function updateScrollShadow() {
+  const box = $('#cs-scroll');
+  box.classList.toggle('is-scrolled', box.scrollTop > 2);
+  $('#cs-cart .cs-cart__list').classList.toggle('has-more', box.scrollTop + box.clientHeight < box.scrollHeight - 2);
+}
+$('#cs-scroll').addEventListener('scroll', updateScrollShadow, { passive: true });
+window.addEventListener('resize', updateScrollShadow);
 
 function renderDone() {
   const d = screen.done || {};

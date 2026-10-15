@@ -978,6 +978,8 @@ $('#pos-payment').addEventListener('change', (e) => {
 
 $('#pos-clear').addEventListener('click', () => {
   pos.lines = [];
+  // 清空時顧客螢幕一律回到輪播待機(即使正在顯示上一位客人的謝謝光臨)
+  screenIsDone = false;
   savePos();
   renderPosCart();
 });
@@ -1235,7 +1237,7 @@ function pushScreen(force = false) {
   }, force ? 0 : 300);
 }
 
-// 結帳完成：顧客螢幕顯示取餐編號(稍後取餐另顯示追蹤 QR code)，30 秒後自動回到待機
+// 結帳完成：顧客螢幕顯示取餐編號(稍後取餐另顯示追蹤 QR code)，20 秒後自動回到待機
 function screenDone({ no, total, url }) {
   if (!screenPin) return;
   clearTimeout(screenTimer);
