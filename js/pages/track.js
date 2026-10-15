@@ -384,7 +384,7 @@ function renderOrder() {
   if (presale && order.status === 'accepted') eta = t('track.presaleAcceptedHint');
   if (expired) eta = '';
   $('#o-eta').textContent = eta;
-  // 「向…付款並確認訂單」字級縮為 3/5
+  // 「向…付款並確認訂單」字級：一般小字的 1.2 倍(原本縮為 3/5，再放大兩倍)
   $('#o-eta').classList.toggle('order-hero__eta--small', presale && order.status === 'pending' && !expired);
   // 預購：取餐時間、付款期限
   const slot = (settings?.presaleSlots || []).find((x) => x.id === order.slotId);
@@ -392,7 +392,7 @@ function renderOrder() {
   if (presale && slot && !presaleVoid) presaleInfo.push(t('track.slot', { s: slotLabel(slot, getLang()) }));
   if (presale && order.status === 'pending' && !presaleVoid) presaleInfo.push(t('track.payBy', { t: dateTime(payDeadline(order)) }));
   $('#o-presale').hidden = !presaleInfo.length;
-  $('#o-presale').innerHTML = presaleInfo.map((x) => `<span>${escapeHtml(x)}</span>`).join('<br>');
+  $('#o-presale').innerHTML = `<span class="order-hero__presale-lines">${presaleInfo.map((x) => escapeHtml(x)).join('<br>')}</span>`;
 
   // 進度條(狀態沒變時不重畫，避免動畫重播)
   const steps = $('#o-steps');

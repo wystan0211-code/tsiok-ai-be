@@ -3383,13 +3383,19 @@ body.is-viewer-open {
   margin-top: 0;
 }
 
-/* 預購：「向…付款並確認訂單」字級為一般小字的 3/5 */
+/* 預購：「向…付款並確認訂單」字級為一般小字的 1.2 倍(3/5 再放大兩倍) */
 .order-hero__eta--small {
-  font-size: 0.6em;
+  font-size: 1.2em;
 }
 
+/* 預購：「取餐時間」「付款期限」兩行開頭對齊，整段仍置中 */
 .order-hero__presale {
   margin-top: var(--space-2);
+}
+
+.order-hero__presale-lines {
+  display: inline-block;
+  text-align: left;
 }
 
 /* ===== 攤位營運頁：平台模式三段滑鈕(關閉 / 預購 / 點餐) =====
@@ -3429,9 +3435,12 @@ body.is-viewer-open {
 
 .mode-switch button .icon {
   font-size: 18px;
+  color: var(--color-text-muted);
+  transition: color 0.2s ease;
 }
 
-.mode-switch button[aria-checked='true'] {
+/* 圓形停在哪個圖標上，那個圖標就變白色 */
+.mode-switch button[aria-checked='true'] .icon {
   color: #ffffff;
 }
 
