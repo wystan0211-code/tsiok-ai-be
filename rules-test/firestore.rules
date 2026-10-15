@@ -331,6 +331,23 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ===== 顧客顯示頁：文件 ID 為 6 位數配對碼 =====
+    // 現場點餐裝置(攤位人員)建立與更新；顧客顯示頁不用登入，只能讀取單一文件與回報「我還在」(seenAt)
+    function screenOk() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['ownerUid', 'state', 'lines', 'total', 'count', 'lang', 'done', 'updatedAt', 'seenAt'])
+        && d.state in ['idle', 'cart', 'done'] && d.lines is list && d.lines.size() <= 60
+        && d.lang in ['zh-Hant', 'en', 'ja'];
+    }
+    match /screens/{pin} {
+      allow get: if pin.matches('^[0-9]{6}$');
+      allow list: if false;
+      allow create: if pin.matches('^[0-9]{6}$') && isStaff() && screenOk();
+      allow update: if (onlyChanged(['seenAt']) && request.resource.data.seenAt == request.time)
+        || (isStaff() && screenOk());
+      allow delete: if isStaff();
+    }
+
     // ===== 缺貨替代設定記憶：攤位人員共用 =====
     match /subMemory/{key} {
       allow read: if isStaff();
