@@ -515,6 +515,40 @@ export const api = {
     });
   }),
 
+  // ===== 顧客顯示頁(screens/{6 位數配對碼}) =====
+  // 攤位的現場點餐裝置建立並寫入；顧客顯示頁不用登入，只能讀取與回報「我還在」(seenAt)
+  screenCreate: (pin) => guard(async () => {
+    const r = ref('screens', pin);
+    if ((await getDoc(r)).exists()) return false; // 配對碼重複，換一組
+    await setDoc(r, {
+      ownerUid: auth.currentUser.uid, state: 'idle', lines: [], total: 0, count: 0, lang: 'zh-Hant', updatedAt: serverTimestamp(),
+    });
+    return true;
+  }),
+  screenUpdate: (pin, patch) => guard(async () => {
+    await updateDoc(ref('screens', pin), { ...patch, updatedAt: serverTimestamp() });
+  }),
+  screenDelete: (pin) => guard(async () => {
+    await deleteDoc(ref('screens', pin));
+  }),
+  screenExists: async (pin) => {
+    try {
+      return (await getDoc(ref('screens', pin))).exists();
+    } catch {
+      return false;
+    }
+  },
+  screenPing: (pin) => guard(async () => {
+    await updateDoc(ref('screens', pin), { seenAt: serverTimestamp() });
+  }),
+  // 監聽顧客顯示頁資料；文件被刪除(解除連線)時回傳 null
+  watchScreen(pin, cb) {
+    return onSnapshot(ref('screens', pin), (snap) => cb(snapData(snap)), (err) => {
+      console.error('顧客顯示頁監聽失敗', err);
+      cb(null);
+    });
+  },
+
   // 預購付款期限(全站，1～48 小時)
   setPresalePayHours: (hours) => guard(async () => {
     await updateDoc(ref('settings', 'app'), { presalePayHours: Math.round(hours), updatedAt: serverTimestamp() });

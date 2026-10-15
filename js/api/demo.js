@@ -403,6 +403,36 @@ export const api = {
     commit();
   },
 
+  // ===== 顧客顯示頁：與正式版相同(展示模式只能在同一個瀏覽器的分頁之間同步) =====
+  async screenCreate(pin) {
+    requireRole(STAFF);
+    db.screens ??= {};
+    if (db.screens[pin]) return false;
+    db.screens[pin] = { id: pin, state: 'idle', lines: [], total: 0, count: 0, lang: 'zh-Hant', updatedAt: Date.now() };
+    commit();
+    return true;
+  },
+  async screenUpdate(pin, patch) {
+    if (!db.screens?.[pin]) throw new ApiError('not-found');
+    Object.assign(db.screens[pin], patch, { updatedAt: Date.now() });
+    commit();
+  },
+  async screenDelete(pin) {
+    if (db.screens) delete db.screens[pin];
+    commit();
+  },
+  async screenExists(pin) {
+    return !!db.screens?.[pin];
+  },
+  async screenPing(pin) {
+    if (!db.screens?.[pin]) return;
+    db.screens[pin].seenAt = Date.now();
+    commit();
+  },
+  watchScreen(pin, cb) {
+    return watch((d) => (d.screens?.[pin] ? structuredClone(d.screens[pin]) : null), cb);
+  },
+
   async setPresalePayHours(hours) {
     requireRole(PRESALE_MGR);
     db.settings.presalePayHours = Math.round(hours);

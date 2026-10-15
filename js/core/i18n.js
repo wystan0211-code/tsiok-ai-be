@@ -228,6 +228,23 @@ const DICT = {
   'err.claimed': ['這張訂單已經綁定到其他裝置。', 'This order is already linked to another device.', 'この注文はすでに別の端末に登録されています。'],
   'err.invalid': ['資料格式不正確。', 'Invalid information. Please check and try again.', '入力内容が正しくありません。'],
   'err.unknown': ['發生未預期的錯誤，請稍後再試。', 'Something went wrong. Please try again later.', '予期しないエラーが発生しました。しばらくしてからもう一度お試しください。'],
+  // ===== 顧客顯示頁(現場點餐) =====
+  'screen.title': ['顧客顯示', 'Customer display', 'お客様用画面'],
+  'screen.pinTitle': ['輸入配對碼', 'Enter pairing code', 'ペアリングコードを入力'],
+  'screen.pinHint': ['請輸入攤位現場點餐頁顯示的 6 位數配對碼', 'Enter the 6-digit code shown on the stall\'s ordering screen.', '屋台の注文画面に表示された6桁のコードを入力してください'],
+  'screen.connect': ['連線', 'Connect', '接続'],
+  'screen.pinWrong': ['找不到這組配對碼，請再確認一次。', 'Pairing code not found. Please check and try again.', 'このコードは見つかりません。もう一度ご確認ください。'],
+  'screen.welcome': ['歡迎光臨', 'Welcome', 'いらっしゃいませ'],
+  'screen.item': ['品項', 'Item', '商品'],
+  'screen.qty': ['數量', 'Qty', '数量'],
+  'screen.subtotal': ['小計', 'Subtotal', '小計'],
+  'screen.total': ['合計', 'Total', '合計'],
+  'screen.count': ['共 {n} 件', '{n} items', '計 {n} 点'],
+  'screen.thanks': ['謝謝光臨', 'Thank you', 'ありがとうございました'],
+  'screen.no': ['取餐編號', 'Order number', '受け取り番号'],
+  'screen.scan': ['掃描 QR code 追蹤進度、開啟取餐通知', 'Scan to track your order and get notified when it is ready', 'QRコードを読み取ると、進捗の確認と受け取り通知ができます'],
+  'screen.paid': ['已收款 {total}', 'Paid {total}', 'お支払い済み {total}'],
+  'screen.disconnected': ['已中斷連線', 'Disconnected', '接続が切れました'],
   // ===== 預購模式 =====
   'home.startPresale': ['開始預購', 'Start pre-order', '予約注文をはじめる'],
   'order.payNotePresale': ['請於{h}小時內以現金或園遊券向 {t} 付款', 'Please pay {t} in cash or festival vouchers within {h} hours.', '{h}時間以内に、現金または金券（園遊券）で{t}にお支払いください。'],
@@ -347,7 +364,7 @@ export function applyStatic(root = document) {
 }
 
 // 日文使用 Noto Sans JP，只在選擇日文時才載入字型
-function ensureJapaneseFont() {
+export function ensureJapaneseFont() {
   if (document.getElementById('font-ja')) return;
   const link = document.createElement('link');
   link.id = 'font-ja';

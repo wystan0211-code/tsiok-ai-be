@@ -35,6 +35,8 @@
 //   resetCounters() / resetDemo()(僅展示模式)
 //   resetCounterC()  C 編號歸零
 //   syncSheetNow() / resetSoldCounts()  立即同步試算表、重設已售出數量
+//   screenCreate(pin) / screenUpdate(pin, patch) / screenDelete(pin)  顧客顯示頁(現場點餐裝置寫入)
+//   screenExists(pin) / screenPing(pin) / watchScreen(pin, cb)       顧客顯示頁(不用登入)
 //   revertOrder(orderId)  退回上一個狀態
 //   setBannerFlags(id, { showNormal, showPresale })  橫幅顯示模式
 //   setBannerLang(id, lang, dataUrl)  英文、日文版橫幅圖片(null 為刪除)

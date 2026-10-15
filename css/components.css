@@ -3522,3 +3522,297 @@ body.is-viewer-open {
     justify-self: end;
   }
 }
+
+/* ===== 顧客顯示頁(customer.html)：橫向平板為主，直向時改為上下排列 ===== */
+.cs-body {
+  min-height: 100dvh;
+  background: var(--color-bg);
+}
+
+.cs-pair {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-4);
+}
+
+.cs-pair__logo {
+  width: min(260px, 60vw);
+  height: auto;
+}
+
+.cs-pair__card {
+  width: min(420px, 100%);
+  text-align: center;
+}
+
+/* 配對碼：大字、字距加寬 */
+.cs-pin {
+  font-size: 2.25rem;
+  font-weight: var(--weight-display);
+  letter-spacing: 0.35em;
+  text-align: center;
+  padding-left: 0.35em;
+}
+
+.cs-screen {
+  min-height: 100dvh;
+  padding: var(--space-4);
+  display: flex;
+}
+
+.cs-screen > section {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 待機：橫幅輪播(淡入淡出) */
+.cs-idle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cs-banners {
+  position: relative;
+  width: min(100%, calc((100dvh - 2 * var(--space-4)) * 9 / 5));
+  aspect-ratio: 9 / 5;
+}
+
+.cs-banner {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius-lg);
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.cs-banner.is-current {
+  opacity: 1;
+}
+
+.cs-welcome {
+  position: absolute;
+  font-size: clamp(2rem, 6vw, 4rem);
+  font-weight: var(--weight-display);
+}
+
+/* 點餐中：左邊明細，右邊合計 */
+.cs-cart {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+.cs-cart__list {
+  overflow: auto;
+  padding: var(--space-2) var(--space-4);
+}
+
+.cs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: clamp(1rem, 2.2vw, 1.375rem);
+}
+
+.cs-table th {
+  padding: var(--space-3) 0 var(--space-2);
+  border-bottom: 2px solid var(--color-text);
+  color: var(--color-text-muted);
+  font-size: 0.8em;
+  font-weight: var(--weight-semibold);
+  text-align: left;
+}
+
+.cs-table td {
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-divider);
+  vertical-align: top;
+}
+
+/* 數量、小計靠右，固定欄寬讓每一列對齊 */
+.cs-table .num {
+  width: 4.5em;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.cs-table th.num:last-child,
+.cs-table td.num:last-child {
+  width: 6em;
+}
+
+.cs-table__name {
+  display: block;
+  font-weight: var(--weight-semibold);
+}
+
+/* 選項：換行並縮排 */
+.cs-table__opt {
+  display: block;
+  padding-left: 1em;
+  color: var(--color-text-muted);
+  font-size: 0.8em;
+}
+
+/* 剛加入或修改的那一列：淡黃底閃一下 */
+.cs-table tr.is-changed td {
+  animation: cs-flash 1.2s ease-out;
+}
+
+@keyframes cs-flash {
+  0% {
+    background: var(--color-primary-soft);
+  }
+
+  100% {
+    background: transparent;
+  }
+}
+
+.cs-cart__sum {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  text-align: center;
+}
+
+.cs-sum__logo {
+  width: min(200px, 70%);
+  height: auto;
+  margin-bottom: var(--space-4);
+}
+
+.cs-sum__label {
+  font-size: 1.25rem;
+  font-weight: var(--weight-semibold);
+}
+
+.cs-sum__total {
+  font-size: clamp(3rem, 8vw, 5.5rem);
+  line-height: 1.1;
+}
+
+/* 結帳後：取餐編號與追蹤 QR code */
+.cs-done {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.cs-done__card,
+.cs-done__qr {
+  text-align: center;
+  padding: var(--space-6) var(--space-5);
+}
+
+.cs-done__thanks {
+  font-size: clamp(1.75rem, 4vw, 2.75rem);
+  font-weight: var(--weight-display);
+  margin-bottom: var(--space-3);
+}
+
+.cs-done__no {
+  font-size: clamp(4rem, 12vw, 8rem);
+  line-height: 1.1;
+}
+
+.cs-done__qr .qr-box svg {
+  width: min(260px, 60vw);
+  height: auto;
+}
+
+/* 直向螢幕：上下排列 */
+@media (orientation: portrait) {
+  .cs-cart {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .cs-sum__logo {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cs-table tr.is-changed td,
+  .cs-banner {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* ===== 攤位現場點餐：顧客顯示頁連線狀態條、語言選單、配對碼 ===== */
+.screen-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  background: var(--color-success);
+  color: #ffffff;
+  font-weight: var(--weight-semibold);
+}
+
+.screen-bar .icon {
+  color: #ffffff;
+}
+
+.screen-bar__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.screen-bar .btn {
+  background: #ffffff;
+}
+
+/* 已離線：淺紅底深紅字 */
+.screen-bar--offline {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger);
+}
+
+.screen-bar--offline .icon {
+  color: var(--color-danger);
+}
+
+.pos-head {
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.pos-head .section-title {
+  margin: 0;
+}
+
+.pos-lang {
+  position: relative;
+}
+
+.pos-lang__menu {
+  left: auto;
+  right: 0;
+  z-index: 20;
+}
+
+.screen-pin {
+  margin: var(--space-4) 0;
+  font-size: clamp(2.5rem, 12vw, 3.5rem);
+  letter-spacing: 0.08em;
+  text-align: center;
+}

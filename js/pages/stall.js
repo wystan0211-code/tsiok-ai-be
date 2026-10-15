@@ -18,7 +18,7 @@ import {
 } from '../core/order-logic.js';
 import { chime, startChimeLoop, stopChimeLoop, unlockAudio } from '../core/sound.js';
 import { qrSvg } from '../core/qr.js';
-import { personNameFor, t as tr } from '../core/i18n.js';
+import { personNameFor, t as tr, itemText } from '../core/i18n.js';
 import {
   SUB_PREF_LABEL, REPLY_WAIT_MS, CANCEL_REASONS, memoryKey, suggestCandidates, candidateLabel, candidatePrice,
   applyLineChanges, notesText,
@@ -880,6 +880,7 @@ function renderPosCart() {
       </div></div>`;
   }).join('') : '<p class="muted">點左側品項加入</p>';
   $('#pos-total').textContent = money(priced.total);
+  pushScreen();
 
   for (const b of $$('[data-mode]')) b.setAttribute('aria-pressed', String(b.dataset.mode === pos.mode));
   $('#pos-later-fields').hidden = pos.mode !== 'later';
@@ -1027,6 +1028,7 @@ async function submitPos() {
     form.phone.value = '';
     form.querySelectorAll('[name=title]').forEach((r) => { r.checked = false; });
     renderPosCart();
+    screenDone({ no, total, url: later ? trackUrl(orderId) : '' });
     if (later) showPickupTicket(orderId, no, total);
     else toast(`已記帳 ${no}・${money(total)}`, 'success');
   } catch (e2) {
@@ -1036,8 +1038,9 @@ async function submitPos() {
 }
 
 // 稍後取餐：顯示編號與 QR code，讓顧客掃描追蹤進度
+const trackUrl = (orderId) => new URL(`track.html?o=${encodeURIComponent(orderId)}&claim=1`, location.href).href;
 function showPickupTicket(orderId, no, total) {
-  const url = new URL(`track.html?o=${encodeURIComponent(orderId)}&claim=1`, location.href).href;
+  const url = trackUrl(orderId);
   openDialog({
     title: '取餐編號',
     body: `
@@ -1048,6 +1051,199 @@ function showPickupTicket(orderId, no, total) {
     actions: [{ label: '完成', value: 'ok' }],
     cancelLabel: '',
   });
+}
+
+// ===== 顧客顯示頁(customer.html)：6 位數配對碼，即時顯示現場點餐明細 =====
+const SCREEN_PIN_KEY = 'tab-pos-screen';
+const SCREEN_LANG_KEY = 'tab-pos-screen-lang';
+const SCREEN_OFFLINE_MS = 2 * 60 * 1000; // 顧客螢幕每 1 分鐘回報一次，超過 2 分鐘沒有回報視為離線
+let screenPin = store.get(SCREEN_PIN_KEY, '');
+let screenLang = store.get(SCREEN_LANG_KEY, 'zh-Hant');
+let screenData = null;
+let screenUnwatch = null;
+let screenDialog = null;      // 配對視窗(連線成功時自動關閉)
+let screenSeenAtOpen = 0;
+let screenTimer = 0;
+let screenLastSent = '';
+let screenIsDone = false;      // 結帳畫面顯示中：購物車清空時不要蓋掉
+
+const screenSeen = () => Number(screenData?.seenAt) || 0;
+const screenOnline = () => !!screenData && screenSeen() > 0 && Date.now() - screenSeen() < SCREEN_OFFLINE_MS;
+
+function watchScreenDoc() {
+  if (screenUnwatch) screenUnwatch();
+  screenUnwatch = null;
+  screenData = null;
+  if (!screenPin) {
+    renderScreenStatus();
+    return;
+  }
+  const pinNow = screenPin;
+  screenUnwatch = api.watchScreen(pinNow, (data) => {
+    if (pinNow !== screenPin) return;
+    screenData = data;
+    // 文件不存在(被其他裝置解除)：清除配對
+    if (!data) setScreenPin('');
+    renderScreenStatus();
+    // 配對視窗開著時，顧客螢幕一回報就自動關閉
+    if (screenDialog && screenSeen() > screenSeenAtOpen) {
+      screenDialog.close('connected');
+      toast('顧客螢幕已連線', 'success');
+    }
+  });
+}
+
+function setScreenPin(pin) {
+  screenPin = pin;
+  store.set(SCREEN_PIN_KEY, pin);
+  screenLastSent = '';
+}
+
+// 連線狀態：按鈕圖標與頁面上方的狀態條
+function renderScreenStatus() {
+  const online = screenOnline();
+  const known = !!screenPin && screenSeen() > 0;
+  $('#screen-btn-icon').textContent = !known ? 'cast' : (online ? 'cast_connected' : 'cast_warning');
+  const bar = $('#screen-bar');
+  bar.hidden = !known;
+  bar.classList.toggle('screen-bar--offline', known && !online);
+  $('#screen-bar-icon').textContent = online ? 'cast_connected' : 'cast_warning';
+  $('#screen-bar-text').textContent = online ? '顧客螢幕已連線' : '顧客螢幕已離線，請確認顧客螢幕是否開著、有沒有網路';
+  for (const b of $$('[data-screen-lang]')) b.classList.toggle('is-current', b.dataset.screenLang === screenLang);
+}
+setInterval(renderScreenStatus, 15000);
+
+async function createPin() {
+  for (let i = 0; i < 5; i++) {
+    const pin = String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
+    if (await api.screenCreate(pin)) return pin;
+  }
+  throw new Error('無法產生配對碼，請再試一次');
+}
+
+async function unpairScreen() {
+  const old = screenPin;
+  setScreenPin('');
+  watchScreenDoc();
+  if (old) await api.screenDelete(old).catch((err) => console.warn(err));
+}
+
+// 配對視窗：顯示 6 位數配對碼，等待顧客螢幕輸入
+async function openScreenPair() {
+  try {
+    if (!screenPin) {
+      setScreenPin(await createPin());
+      watchScreenDoc();
+      pushScreen(true);
+    }
+  } catch (err) {
+    toast(err.message || errorText(err), 'danger');
+    return;
+  }
+  screenSeenAtOpen = screenSeen();
+  const url = new URL('customer.html', location.href).href;
+  const { value } = await openDialog({
+    title: '連線顧客顯示頁',
+    body: `<p class="muted text-sm">在面向顧客的平板或手機開啟 <strong>${escapeHtml(url)}</strong>，輸入下方配對碼：</p>
+      <p class="screen-pin display-no">${screenPin.replace(/(\d{3})(\d{3})/, '$1 $2')}</p>
+      <p class="muted text-sm" style="text-align:center">${screenOnline() ? '目前已連線。' : '等待顧客螢幕輸入配對碼…'}</p>`,
+    actions: [
+      { label: '重新產生配對碼', value: 'regen', variant: 'ghost' },
+      { label: '解除連線', value: 'unpair', variant: 'danger' },
+    ],
+    cancelLabel: '關閉',
+    onOpen: (dlg) => { screenDialog = dlg; },
+  });
+  screenDialog = null;
+  if (value === 'unpair') {
+    await unpairScreen();
+    toast('已解除顧客螢幕連線');
+  } else if (value === 'regen') {
+    await unpairScreen();
+    openScreenPair();
+  }
+}
+
+$('#screen-btn').addEventListener('click', () => openScreenPair());
+$('#screen-unpair').addEventListener('click', async () => {
+  if (!await confirmDialog('解除連線', '確定要解除顧客螢幕的連線嗎？顧客螢幕會回到輸入配對碼的畫面。', { confirmLabel: '解除連線', danger: true })) return;
+  await unpairScreen();
+  toast('已解除顧客螢幕連線');
+});
+
+// 顧客顯示頁語言(攤位這邊不變)
+$('#screen-lang-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const menu = $('#screen-lang-menu');
+  menu.hidden = !menu.hidden;
+  $('#screen-lang-btn').setAttribute('aria-expanded', String(!menu.hidden));
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.pos-lang')) $('#screen-lang-menu').hidden = true;
+});
+$('#screen-lang-menu').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-screen-lang]');
+  if (!b) return;
+  screenLang = b.dataset.screenLang;
+  store.set(SCREEN_LANG_KEY, screenLang);
+  $('#screen-lang-menu').hidden = true;
+  renderScreenStatus();
+  pushScreen(true);
+  toast(`顧客螢幕語言：${b.textContent.trim()}`);
+});
+
+// 顧客螢幕的明細(依顧客螢幕語言)；連續操作約 0.3 秒合併成一次寫入，內容沒變時不寫入
+function screenPayload() {
+  const map = itemsById();
+  const lines = [];
+  let total = 0;
+  let count = 0;
+  for (const l of pos.lines) {
+    const item = map[l.itemId];
+    if (!item || l.qty <= 0) continue;
+    const sel = normalizeSel(item, l);
+    const unit = item.price + selPrice(item, sel);
+    lines.push({
+      key: `${l.itemId}|${selKey(sel)}`,
+      name: itemText(item, screenLang).name,
+      option: selText(item, sel, screenLang) || '',
+      qty: l.qty,
+      subtotal: unit * l.qty,
+    });
+    total += unit * l.qty;
+    count += l.qty;
+  }
+  return { lines, total, count, lang: screenLang };
+}
+
+function pushScreen(force = false) {
+  if (!screenPin) return;
+  clearTimeout(screenTimer);
+  screenTimer = setTimeout(() => {
+    const p = screenPayload();
+    // 結帳畫面顯示中、購物車又是空的：只更新語言，保留結帳畫面
+    if (!p.lines.length && screenIsDone) {
+      if (force) api.screenUpdate(screenPin, { lang: screenLang }).catch((err) => console.warn(err));
+      return;
+    }
+    screenIsDone = false;
+    const patch = { ...p, state: p.lines.length ? 'cart' : 'idle' };
+    const sig = JSON.stringify(patch);
+    if (!force && sig === screenLastSent) return;
+    screenLastSent = sig;
+    api.screenUpdate(screenPin, patch).catch((err) => console.warn('顧客螢幕更新失敗', err));
+  }, force ? 0 : 300);
+}
+
+// 結帳完成：顧客螢幕顯示取餐編號(稍後取餐另顯示追蹤 QR code)，30 秒後自動回到待機
+function screenDone({ no, total, url }) {
+  if (!screenPin) return;
+  clearTimeout(screenTimer);
+  screenIsDone = true;
+  screenLastSent = '';
+  api.screenUpdate(screenPin, {
+    state: 'done', lines: [], total: 0, count: 0, lang: screenLang, done: { no, total, url, at: Date.now() },
+  }).catch((err) => console.warn('顧客螢幕更新失敗', err));
 }
 
 // ===== 收件匣 =====
@@ -1221,6 +1417,8 @@ requireStaff('staff', (p) => {
     renderBoard();
     if ($('#pickup-q').value) renderPickup();
   }, { presaleOnly: onlyPresale });
+  // 顧客顯示頁：重新整理後繼續使用原本的配對碼
+  if (!onlyPresale) watchScreenDoc();
   if (!onlyPresale) {
     api.watchInbox((list) => {
       inbox = list;
