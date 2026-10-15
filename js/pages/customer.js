@@ -33,8 +33,10 @@ function applyLangTo(code) {
   for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n, {}, lang);
 }
 
-// 金額：全型＄，後面不留空格
-const money = (n) => `＄${Number(n || 0).toLocaleString('zh-TW')}`;
+// 金額：合計與已收款用全型＄，表格小計用半形 $，後面都不留空格
+const num = (n) => Number(n || 0).toLocaleString('zh-TW');
+const money = (n) => `＄${num(n)}`;
+const moneyHalf = (n) => `$${num(n)}`;
 
 // ===== 配對 =====
 function showPair(error = '') {
@@ -135,11 +137,12 @@ function renderCart() {
     return `<tr data-key="${escapeHtml(l.key)}" data-sig="${sig}" class="${changed ? 'is-changed' : ''}">
       <td><span class="cs-table__name">${escapeHtml(l.name)}</span>${l.option ? `<span class="cs-table__opt">${escapeHtml(l.option)}</span>` : ''}</td>
       <td class="num">${l.qty}</td>
-      <td class="num">${money(l.subtotal)}</td>
+      <td class="num">${moneyHalf(l.subtotal)}</td>
     </tr>`;
   }).join('');
   $('#cs-count').textContent = t('screen.count', { n: screen.count || 0 }, lang);
-  $('#cs-total').textContent = money(screen.total);
+  // 合計的＄縮小顯示
+  $('#cs-total').innerHTML = `<span class="cs-sum__cur">＄</span>${num(screen.total)}`;
   // 剛加入或修改的那一列不在畫面內時，自動捲到看得見的位置
   const changed = [...document.querySelectorAll('#cs-lines tr.is-changed')].pop();
   if (changed) changed.scrollIntoView({ block: 'nearest' });

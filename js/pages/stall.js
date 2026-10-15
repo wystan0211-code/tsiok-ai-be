@@ -1394,7 +1394,8 @@ requireStaff('staff', (p) => {
     for (const tab of $$('.tab')) tab.hidden = tab.dataset.tab !== 'board';
     $('.tabs--bar').hidden = true;
   }
-  $('#presale-tools').hidden = !canPresale(p);
+  // 付款期限小工具只放在預購主管的營運頁；管理員改到後台設定頁的「預購」區調整(兩邊是同一個設定)
+  $('#presale-tools').hidden = p.role !== 'presale';
   selectTab(onlyPresale ? 'board' : store.get('tab-stall-tab', 'board'));
   setMobileCol(mobileCol);
 
