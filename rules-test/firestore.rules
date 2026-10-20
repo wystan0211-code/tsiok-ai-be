@@ -335,17 +335,32 @@ service cloud.firestore {
     // 現場點餐裝置(攤位人員)建立與更新；顧客顯示頁不用登入，只能讀取單一文件與回報「我還在」(seenAt)
     function screenOk() {
       let d = request.resource.data;
-      return d.keys().hasOnly(['ownerUid', 'state', 'lines', 'total', 'count', 'lang', 'done', 'updatedAt', 'seenAt'])
+      return d.keys().hasOnly(['ownerUid', 'state', 'lines', 'total', 'count', 'lang', 'done', 'updatedAt', 'seenAt', 'view', 'overlay'])
         && d.state in ['idle', 'cart', 'done'] && d.lines is list && d.lines.size() <= 60
-        && d.lang in ['zh-Hant', 'en', 'ja'];
+        && d.lang in ['zh-Hant', 'en', 'ja']
+        && d.get('view', 'carousel') in ['carousel', 'board']
+        && (d.get('overlay', null) == null || d.overlay is map);
     }
     match /screens/{pin} {
       allow get: if pin.matches('^[0-9]{6}$');
       allow list: if false;
       allow create: if pin.matches('^[0-9]{6}$') && isStaff() && screenOk();
+      // 不用登入的顧客顯示頁只能：回報「我還在」(seenAt)、切換待機畫面「輪播 / 叫號」(view)
       allow update: if (onlyChanged(['seenAt']) && request.resource.data.seenAt == request.time)
+        || (onlyChanged(['view']) && request.resource.data.view in ['carousel', 'board'])
         || (isStaff() && screenOk());
       allow delete: if isStaff();
+    }
+
+    // ===== 公開叫號資料：只有製作中、可取餐的編號(不含姓名電話)，叫號頁不用登入就能讀 =====
+    match /board/{docId} {
+      allow get: if docId == 'today';
+      allow list: if false;
+      allow create, update: if docId == 'today' && isStaff()
+        && request.resource.data.keys().hasOnly(['making', 'ready', 'updatedAt'])
+        && request.resource.data.making is list && request.resource.data.making.size() <= 200
+        && request.resource.data.ready is list && request.resource.data.ready.size() <= 200;
+      allow delete: if isAdmin();
     }
 
     // ===== 缺貨替代設定記憶：攤位人員共用 =====
