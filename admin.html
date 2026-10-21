@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,add_photo_alternate,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,cast,cast_connected,cast_warning,chat,check,check_circle,chevron_left,chevron_right,close,content_copy,delete,done_all,download,edit,error,event,expand_more,fullscreen,group,image,inbox,info,inventory_2,language,link_off,login,logout,near_me,notifications,notifications_active,notifications_off,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,swap_horiz,sync,timer,tune,tv,undo,upload,view_kanban,visibility,volume_up,warning,zoom_in,zoom_out&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,add_photo_alternate,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,cast,cast_connected,cast_pause,cast_warning,chat,check,check_circle,chevron_left,chevron_right,close,content_copy,delete,done_all,download,edit,error,event,expand_more,fullscreen,group,image,inbox,info,inventory_2,language,link_off,login,logout,near_me,notifications,notifications_active,notifications_off,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,swap_horiz,sync,timer,tune,tv,undo,upload,view_kanban,visibility,volume_up,warning,zoom_in,zoom_out&display=block">
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/components.css">
@@ -159,8 +159,15 @@
           <label class="field"><span class="field__label">每張預購單最多幾件(空白為不限制)</span>
             <input class="input" name="presaleMaxItems" type="number" min="1" max="50" step="1"></label>
         </div>
-        <label class="field"><span class="field__label">預購的個資同意文字</span>
-          <textarea class="textarea" name="presaleConsentText" maxlength="300" required></textarea></label>
+        <fieldset class="field" style="border:none;padding:0;margin:0">
+          <legend class="field__label">預購送出前的同意勾選文字</legend>
+          <div class="radio-group">
+            <label class="radio-chip"><input type="radio" name="presaleConsentMode" value="default"><span>預設句「我同意隱私權政策」</span></label>
+            <label class="radio-chip"><input type="radio" name="presaleConsentMode" value="custom"><span>自訂文字</span></label>
+          </div>
+          <textarea class="textarea" name="presaleConsentText" maxlength="300" aria-label="預購的自訂同意文字"></textarea>
+          <span class="field__hint">選「自訂文字」時顯示上面這段；空白時仍顯示預設句。文字中的「隱私權政策」五個字會自動連結到政策頁。</span>
+        </fieldset>
         <div class="field">
           <span class="field__label">取餐時段(只填開始時間為時間點；開始、結束都填為時間區間；名額空白為不限制)</span>
           <div id="slot-editor" class="slot-editor"></div>
@@ -175,8 +182,18 @@
         <label class="field"><span class="field__label">簡訊範本</span>
           <textarea class="textarea" name="smsTemplate" maxlength="200"></textarea>
           <span class="field__hint">{no} 會換成訂單編號，{surname} 會換成姓氏</span></label>
-        <label class="field"><span class="field__label">個資同意文字(顧客送出前必須勾選)</span>
-          <textarea class="textarea" name="consentText" maxlength="300" required></textarea></label>
+        <label class="field"><span class="field__label">隱私權政策網址(例如 Google Sites 頁面)</span>
+          <input class="input" name="privacyUrl" type="url" inputmode="url" maxlength="500" placeholder="https://sites.google.com/...">
+          <span class="field__hint">必須是 https:// 開頭。空白時，勾選文字中的「隱私權政策」顯示為一般文字、不能點。</span></label>
+        <fieldset class="field" style="border:none;padding:0;margin:0">
+          <legend class="field__label">送出前的同意勾選文字(一般點餐，顧客必須勾選)</legend>
+          <div class="radio-group">
+            <label class="radio-chip"><input type="radio" name="consentMode" value="default"><span>預設句「我同意隱私權政策」</span></label>
+            <label class="radio-chip"><input type="radio" name="consentMode" value="custom"><span>自訂文字</span></label>
+          </div>
+          <textarea class="textarea" name="consentText" maxlength="300" aria-label="一般點餐的自訂同意文字"></textarea>
+          <span class="field__hint">選「自訂文字」時顯示上面這段；空白時仍顯示預設句。文字中的「隱私權政策」五個字會自動連結到政策頁。</span>
+        </fieldset>
 
         <details class="tr-box">
           <summary>英文與日文翻譯(顧客選擇英文或日文時顯示；儲存時自動翻譯，可手動修改)</summary>
@@ -185,8 +202,8 @@
             <label class="field"><span class="field__hint">跑馬燈內容</span><input class="input" name="tr_en_bannerText" maxlength="200"></label>
             <label class="field"><span class="field__hint">預購模式的跑馬燈內容</span><input class="input" name="tr_en_presaleBannerText" maxlength="200"></label>
             <label class="field"><span class="field__hint">預購付款對象</span><input class="input" name="tr_en_presaleTeacher" maxlength="60"></label>
-            <label class="field"><span class="field__hint">預購的個資同意文字</span><textarea class="textarea" name="tr_en_presaleConsentText" maxlength="600"></textarea></label>
-            <label class="field"><span class="field__hint">個資同意文字</span><textarea class="textarea" name="tr_en_consentText" maxlength="600"></textarea></label>
+            <label class="field"><span class="field__hint">預購的自訂同意文字</span><textarea class="textarea" name="tr_en_presaleConsentText" maxlength="600"></textarea></label>
+            <label class="field"><span class="field__hint">一般點餐的自訂同意文字(保留 Privacy Policy 才會出現連結)</span><textarea class="textarea" name="tr_en_consentText" maxlength="600"></textarea></label>
             <label class="field"><span class="field__hint">常用訊息(一行一則，順序與中文相同)</span><textarea class="textarea" name="tr_en_messageTemplates"></textarea></label>
             <label class="field"><span class="field__hint">簡訊範本(必須保留 {no}，可用 {surname})</span><textarea class="textarea" name="tr_en_smsTemplate" maxlength="400"></textarea></label>
           </fieldset>
@@ -195,8 +212,8 @@
             <label class="field"><span class="field__hint">跑馬燈內容</span><input class="input" name="tr_ja_bannerText" maxlength="200"></label>
             <label class="field"><span class="field__hint">預購模式的跑馬燈內容</span><input class="input" name="tr_ja_presaleBannerText" maxlength="200"></label>
             <label class="field"><span class="field__hint">預購付款對象</span><input class="input" name="tr_ja_presaleTeacher" maxlength="60"></label>
-            <label class="field"><span class="field__hint">預購的個資同意文字</span><textarea class="textarea" name="tr_ja_presaleConsentText" maxlength="600"></textarea></label>
-            <label class="field"><span class="field__hint">個資同意文字</span><textarea class="textarea" name="tr_ja_consentText" maxlength="600"></textarea></label>
+            <label class="field"><span class="field__hint">預購的自訂同意文字</span><textarea class="textarea" name="tr_ja_presaleConsentText" maxlength="600"></textarea></label>
+            <label class="field"><span class="field__hint">一般點餐的自訂同意文字(保留 プライバシーポリシー 才會出現連結)</span><textarea class="textarea" name="tr_ja_consentText" maxlength="600"></textarea></label>
             <label class="field"><span class="field__hint">常用訊息(一行一則，順序與中文相同)</span><textarea class="textarea" name="tr_ja_messageTemplates"></textarea></label>
             <label class="field"><span class="field__hint">簡訊範本(必須保留 {no}，可用 {surname})</span><textarea class="textarea" name="tr_ja_smsTemplate" maxlength="400"></textarea></label>
           </fieldset>
