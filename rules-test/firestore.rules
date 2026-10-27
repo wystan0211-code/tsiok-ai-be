@@ -133,7 +133,8 @@ service cloud.firestore {
         && o.seq == d.value
         && ((type == 'A' && o.type == 'preorder' && o.uid == uid())
             || (type == 'B' && o.type == 'walkin' && isStaff())
-            || (type == 'C' && o.type == 'presale' && o.uid == uid()));
+            || (type == 'C' && o.type == 'presale'
+                && (o.uid == uid() || (o.get('onsite', false) == true && isManager()))));
     }
     match /counters/{type} {
       allow get: if signedIn();
@@ -186,32 +187,56 @@ service cloud.firestore {
         && s.used == false && sAfter.used == true && sAfter.orderId == orderId
         && existsAfter(path('contacts', orderId));
     }
-    // 預購單(C)：預購模式開啟時才能送出；全名至少 2 字、稱謂老師／主任／其他、取餐時段、付款期限
+    // 預購單(C)共用檢查：全名至少 2 字、稱謂老師／學生／其他(學生必選後台設定的班級)、取餐時段、付款期限、件數上限
+    // 件數上限：學生用 presaleStudentMaxItems，空白時沿用 presaleMaxItems(與 order-logic.js 的 presaleItemLimit 相同)
     // 時段名額在標示付款時才占用，這裡不檢查
+    function presaleBaseOk(d, settings) {
+      let general = settings.get('presaleMaxItems', null);
+      let student = settings.get('presaleStudentMaxItems', null);
+      let limit = (d.title == '學生' && student != null && student != 0) ? student : general;
+      let payHours = settings.get('presalePayHours', null);
+      return d.status == 'pending' && d.pushEnabled == false && d.paid == false
+        && d.surname is string && d.surname.size() >= 2 && d.surname.size() <= 10
+        && d.title in ['老師', '學生', '其他']
+        && (d.title != '學生' || d.get('className', '') in settings.get('presaleClasses', []))
+        && d.slotId is string && d.slotId.size() >= 1 && d.slotId.size() <= 40
+        && d.payHours == (payHours == null ? 12 : payHours)
+        && linesOk(d.items) && d.itemCount == sumQty(d.items) && d.itemCount >= 1
+        && settings.get('orderMode', '') == 'presale'
+        && (limit == null || limit == 0 || d.itemCount <= limit)
+        && d.createdAt == request.time && d.updatedAt == request.time;
+    }
+    // 顧客線上送出的預購單
     function presaleChecks(orderId) {
       let d = request.resource.data;
       let s = get(path('sessions', uid())).data;
       let sAfter = getAfter(path('sessions', uid())).data;
       let c = getAfter(path('counters', 'C')).data;
       let settings = get(path('settings', 'app')).data;
-      let maxItems = settings.get('presaleMaxItems', null);
-      let payHours = settings.get('presalePayHours', null);
-      return d.keys().hasOnly(['type', 'seq', 'no', 'status', 'uid', 'items', 'itemCount', 'surname', 'title',
+      return d.keys().hasOnly(['type', 'seq', 'no', 'status', 'uid', 'items', 'itemCount', 'surname', 'title', 'className',
                                'lang', 'pushEnabled', 'slotId', 'payHours', 'paid', 'createdAt', 'updatedAt'])
-        && d.uid == uid() && d.status == 'pending' && d.pushEnabled == false && d.paid == false
+        && d.uid == uid()
         && d.get('lang', 'zh-Hant') in ['zh-Hant', 'en', 'ja']
-        && d.surname is string && d.surname.size() >= 2 && d.surname.size() <= 10
-        && d.title in ['老師', '主任', '其他']
-        && d.slotId is string && d.slotId.size() >= 1 && d.slotId.size() <= 40
-        && d.payHours == (payHours == null ? 12 : payHours)
-        && linesOk(d.items) && d.itemCount == sumQty(d.items) && d.itemCount >= 1
-        && settings.get('orderMode', '') == 'presale'
-        && (maxItems == null || maxItems == 0 || d.itemCount <= maxItems)
-        && d.createdAt == request.time && d.updatedAt == request.time
+        && presaleBaseOk(d, settings)
         && d.seq is int && c.value == d.seq && c.lastOrderId == orderId
         && d.no == fmtNo('C', d.seq)
         && s.used == false && sAfter.used == true && sAfter.orderId == orderId
         && existsAfter(path('contacts', orderId));
+    }
+    // 攤位現場建立的預購單：只有攤位主管與管理員；沒有顧客身分(uid 為 null)，手機號碼選填
+    function presaleOnsiteChecks(orderId) {
+      let d = request.resource.data;
+      let c = getAfter(path('counters', 'C')).data;
+      let settings = get(path('settings', 'app')).data;
+      return d.keys().hasOnly(['type', 'onsite', 'seq', 'no', 'status', 'uid', 'claimedBy', 'items', 'itemCount', 'surname',
+                               'title', 'className', 'lang', 'pushEnabled', 'slotId', 'payHours', 'paid', 'createdBy',
+                               'createdAt', 'updatedAt'])
+        && d.onsite == true && d.uid == null && d.claimedBy == null && d.createdBy == uid()
+        && d.lang == 'zh-Hant'
+        && presaleBaseOk(d, settings)
+        && d.seq is int && c.value == d.seq && c.lastOrderId == orderId
+        && d.no == fmtNo('C', d.seq)
+        && isManager();
     }
     function walkinChecks(orderId) {
       let d = request.resource.data;
@@ -241,11 +266,11 @@ service cloud.firestore {
         && d.type == o.type && d.seq == o.seq && d.no == o.no && d.uid == o.uid
         && d.updatedAt == request.time
         && onlyChanged(['status', 'paid', 'paidAt', 'payFrom', 'payHours', 'slotId', 'slotChanged',
-                        'lines', 'total', 'acceptedAt', 'establishedAt', 'updatedAt'])
+                        'lines', 'total', 'acceptedAt', 'establishedAt', 'payment', 'updatedAt'])
         && ((o.status == 'pending' && d.status == 'accepted' && d.paid == true)
           || (o.status == 'accepted' && d.status == 'pending' && d.paid == false
               && d.payFrom == request.time && d.payHours is int && d.payHours >= 1 && d.payHours <= 48))
-        && isPresaleMgr();
+        && (isPresaleMgr() || (o.get('onsite', false) == true && isManager()));
     }
     function customerUpdateOk() {
       let d = request.resource.data;
@@ -258,7 +283,7 @@ service cloud.firestore {
         // 開啟推播(持有訂單連結者即可，iPhone 主畫面 App 與 Safari 身分不同)
         || (onlyChanged(['pushEnabled', 'updatedAt']) && d.pushEnabled == true)
         // 掃描現場取餐 QR code 認領訂單
-        || (o.type == 'walkin' && o.get('claimedBy', null) == null && d.claimedBy == uid()
+        || ((o.type == 'walkin' || o.get('onsite', false) == true) && o.get('claimedBy', null) == null && d.claimedBy == uid()
           && onlyChanged(['claimedBy', 'updatedAt']))
         // 本人回覆攤位的替代品詢問(只能寫入回覆，且必須對應目前這一次詢問)
         || (o.get('uid', null) == uid() && o.status in ['accepted', 'ready'] && ('shortage' in o)
@@ -274,7 +299,8 @@ service cloud.firestore {
       allow create: if signedIn() && (
         (request.resource.data.type == 'preorder' && preorderChecks(orderId))
         || (request.resource.data.type == 'walkin' && isStaff() && walkinChecks(orderId))
-        || (request.resource.data.type == 'presale' && presaleChecks(orderId))
+        || (request.resource.data.type == 'presale' && request.resource.data.get('onsite', false) == false && presaleChecks(orderId))
+        || (request.resource.data.type == 'presale' && request.resource.data.get('onsite', false) == true && presaleOnsiteChecks(orderId))
         || (request.resource.data.type == 'manual' && isAdmin())
       );
       allow update: if isAdmin() || presaleMgrUpdateOk() || staffUpdateOk() || customerUpdateOk();
@@ -299,6 +325,7 @@ service cloud.firestore {
       allow create: if signedIn() && (
         contactPreorderOk(orderId)
         || (isStaff() && getAfter(path('orders', orderId)).data.type == 'walkin')
+        || (isManager() && getAfter(path('orders', orderId)).data.get('onsite', false) == true)
       );
       allow update, delete: if isAdmin();
     }
@@ -327,7 +354,7 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if request.resource.data.keys().hasOnly(['slots', 'sold', 'updatedAt'])
         && request.resource.data.slots is map && request.resource.data.sold is map
-        && isPresaleMgr();
+        && (isPresaleMgr() || isManager());
       allow delete: if isAdmin();
     }
 
