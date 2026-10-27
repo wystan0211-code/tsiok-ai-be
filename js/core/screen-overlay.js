@@ -47,7 +47,7 @@ export function renderOverlay(screen, lang) {
     el.innerHTML = `<div class="cs-overlay__card">
       <p class="muted">${escapeHtml(t('screen.no', {}, lang))}</p>
       <p class="display-no cs-overlay__no">${escapeHtml(o.no || '')}</p>
-      <p class="muted">${escapeHtml(t('screen.paid', { total }, lang))}</p>
+      <p class="muted">${escapeHtml(t(o.unpaid ? 'screen.toPay' : 'screen.paid', { total }, lang))}</p>
       ${o.url ? `<div class="qr-box cs-overlay__qr">${qrSvg(o.url)}</div>
       <p class="text-sm">${escapeHtml(t('screen.scan', {}, lang))}</p>` : ''}
     </div>`;

@@ -640,6 +640,9 @@ function fillSettings() {
   f.presaleTeacher.value = settings.presaleTeacher || '';
   f.presalePayHours.value = Number(settings.presalePayHours) || PRESALE_PAY_HOURS;
   f.presaleMaxItems.value = settings.presaleMaxItems || '';
+  f.presaleStudentMaxItems.value = settings.presaleStudentMaxItems || '';
+  classDraft = (settings.presaleClasses || []).slice();
+  renderClassEditor();
   // 自訂同意文字：還沒存過時，帶入原本的同意文字當作可切換的自訂選項
   f.presaleConsentText.value = settings.presaleConsentText ?? DEFAULT_SETTINGS.presaleConsentText;
   f.querySelector(`[name=presaleConsentMode][value="${settings.presaleConsentMode === 'custom' ? 'custom' : 'default'}"]`).checked = true;
@@ -723,6 +726,8 @@ $('#settings-form').addEventListener('submit', (e) => {
       presaleTeacher: f.presaleTeacher.value.trim(),
       presalePayHours: Math.min(PRESALE_MAX_PAY_HOURS, Math.max(1, Math.round(Number(f.presalePayHours.value) || PRESALE_PAY_HOURS))),
       presaleMaxItems: f.presaleMaxItems.value.trim() === '' ? null : Math.max(1, Math.round(Number(f.presaleMaxItems.value))),
+      presaleStudentMaxItems: f.presaleStudentMaxItems.value.trim() === '' ? null : Math.max(1, Math.round(Number(f.presaleStudentMaxItems.value))),
+      presaleClasses: classesForSave(),
       presaleConsentText: f.presaleConsentText.value.trim(),
       presaleSlots: slotsForSave(),
       showStockLeft: f.showStockLeft.checked,
@@ -809,6 +814,36 @@ $('#slot-editor').addEventListener('click', (e) => {
   renderSlotEditor();
   $('#settings-form').dataset.dirty = '1';
 });
+// ===== 學生可選的班級：一列一個名稱(不翻譯) =====
+let classDraft = [];
+function renderClassEditor() {
+  $('#class-editor').innerHTML = classDraft.length ? classDraft.map((c, i) => `
+    <div class="class-editor__row" data-class="${i}">
+      <input class="input" maxlength="20" placeholder="例如 901、九年愛班" aria-label="班級名稱" value="${escapeHtml(c)}">
+      <button class="btn btn--ghost btn--icon" type="button" data-class-del aria-label="刪除班級">${icon('delete')}</button>
+    </div>`).join('') : '<p class="muted text-sm">尚未設定班級，預購模式下顧客選「學生」時無法送出。</p>';
+}
+$('#class-add').addEventListener('click', () => {
+  classDraft.push('');
+  renderClassEditor();
+  $('#class-editor').querySelector('[data-class]:last-child input')?.focus();
+  $('#settings-form').dataset.dirty = '1';
+});
+$('#class-editor').addEventListener('input', (e) => {
+  const row = e.target.closest('[data-class]');
+  if (row) classDraft[Number(row.dataset.class)] = e.target.value;
+});
+$('#class-editor').addEventListener('click', (e) => {
+  if (!e.target.closest('[data-class-del]')) return;
+  classDraft.splice(Number(e.target.closest('[data-class]').dataset.class), 1);
+  renderClassEditor();
+  $('#settings-form').dataset.dirty = '1';
+});
+// 去掉空白列與重複名稱
+function classesForSave() {
+  return [...new Set(classDraft.map((c) => String(c).trim()).filter(Boolean))].slice(0, 60);
+}
+
 function slotsForSave() {
   return slotDraft.map((x) => ({
     id: x.id, date: x.date || '', start: x.start || '', end: x.end || '',
@@ -959,7 +994,7 @@ function renderFinance() {
     <tr data-order="${o.id}" class="${o.deleted ? 'is-deleted' : ''}">
       <td class="display-no">${escapeHtml(o.no)}</td>
       <td>${TYPE_LABEL[o.type] || o.type}</td>
-      <td>${o.deleted ? '已刪除' : (o.voided || isPresaleVoid(o) ? '已作廢' : statusLabel(o))}</td>
+      <td>${o.deleted ? '已刪除' : (isPresaleVoid(o) ? '已作廢' : statusLabel(o))}</td>
       <td>${dateTime(o.establishedAt || o.createdAt)}</td>
       <td>${escapeHtml(personName(o.surname, o.title))}</td>
       <td>${escapeHtml(summarizeLines(displayLines(o, {})))}${o.note ? `<div class="muted">${escapeHtml(o.note)}</div>` : ''}</td>
@@ -1068,7 +1103,7 @@ $('#finance-export').addEventListener('click', (e) => withBusy(e.currentTarget, 
   }
   const header = ['訂單編號', '類型', '狀態', '已刪除', '姓氏', '電話', '品項', '件數', '金額', '付款方式', '送出時間', '確立時間', '取餐時間', '備註'];
   const rows = financeOrders.map((o) => [
-    o.no, TYPE_LABEL[o.type] || o.type, o.voided || isPresaleVoid(o) ? '已作廢' : statusLabel(o), o.deleted ? '是' : '',
+    o.no, TYPE_LABEL[o.type] || o.type, isPresaleVoid(o) ? '已作廢' : statusLabel(o), o.deleted ? '是' : '',
     personName(o.surname, o.title), contactMap[o.id]?.phone ? `="${contactMap[o.id].phone}"` : '', // 公式寫法讓 Excel 保留開頭的 0
     (o.lines || []).map((l) => `${lineLabel(l)}×${l.qty}`).join('、'), o.itemCount ?? '', o.total ?? '',
     o.payment || '', dateTime(o.createdAt), dateTime(o.establishedAt), dateTime(o.pickedAt), o.note || '',
@@ -1278,7 +1313,7 @@ async function showPhoneLock(phone) {
   }
   let status = '訂單已不存在';
   if (order) {
-    if (order.voided) status = '已作廢';
+    if (order.voided) status = '已取消(後台作廢)';
     else if (order.deleted) status = '已刪除';
     else if (isPresaleVoid(order)) status = '已作廢(逾時未付款)';
     else if (isExpired(order)) status = `${statusLabel(order)}(已超過 12 小時，視為失效)`;

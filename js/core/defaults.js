@@ -17,6 +17,8 @@ export const DEFAULT_SETTINGS = {
   presaleTeacher: '林敏君老師',      // 付款對象(顧客端顯示)
   presalePayHours: 12,               // 付款期限(小時，1～48)
   presaleMaxItems: null,             // 每張預購單最多幾件(空白為不限制)
+  presaleStudentMaxItems: null,      // 學生身分的預購單最多幾件(空白時沿用 presaleMaxItems)
+  presaleClasses: [],                // 學生預購可選的班級名稱(不翻譯)
   presaleSlots: [],                  // 取餐時段 [{ id, date, start, end, cap }]
   presaleBannerText: '',             // 預購模式的跑馬燈
   presaleBannerActive: false,

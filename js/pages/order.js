@@ -7,7 +7,9 @@ import {
 } from '../core/ui.js';
 import { errorText } from '../core/errors.js';
 import { store } from '../core/storage.js';
-import { escapeHtml, money, personName, TITLES, PRESALE_TITLES, lineWithNote } from '../core/format.js';
+import {
+  escapeHtml, money, personName, TITLES, PRESALE_TITLES, STUDENT_TITLE, lineWithNote,
+} from '../core/format.js';
 import {
   countItems, priceLines, stockIssues, summarizeLines, normalizePhone, isValidPhone,
   orderMode, visibleIn, presaleLeft, presaleIssues, groupSlots, slotDateLabel, slotTime, slotLabel, slotLeft,
@@ -835,10 +837,30 @@ function renderCheckout() {
   if (isPresaleMode()) renderSlots();
 }
 
-// 單筆上限：預購模式用「每張預購單最多幾件」(空白為不限制)
+// 單筆上限：預購模式用「每張預購單最多幾件」(空白為不限制)；學生另用「學生預購單最多幾件」(空白時沿用前者)
+function presaleTitleNow() {
+  return $('#checkout-form')?.elements.title?.value || store.get(FORM_KEY, {}).presaleTitle || '';
+}
 function maxItems() {
-  if (isPresaleMode()) return Number(settings.presaleMaxItems) || Infinity;
+  if (isPresaleMode()) {
+    const general = Number(settings.presaleMaxItems) || Infinity;
+    if (presaleTitleNow() === STUDENT_TITLE) return Number(settings.presaleStudentMaxItems) || general;
+    return general;
+  }
   return settings.maxItemsPerOrder;
+}
+
+// 學生班級選單：選「學生」時出現在稱謂按鈕正下方(班級名稱不翻譯)
+function renderClassField() {
+  const field = $('#class-field');
+  const show = isPresaleMode() && presaleTitleNow() === STUDENT_TITLE;
+  field.hidden = !show;
+  if (!show) return;
+  const list = (settings.presaleClasses || []).filter(Boolean);
+  const sel = form.elements.className;
+  const chosen = sel.value || store.get(FORM_KEY, {}).className || '';
+  sel.innerHTML = `<option value="">${escapeHtml(t(list.length ? 'order.classPlaceholder' : 'order.classNone'))}</option>`
+    + list.map((c) => `<option value="${escapeHtml(c)}" ${c === chosen ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
 }
 const payHours = () => Number(settings.presalePayHours) || PRESALE_PAY_HOURS;
 
@@ -877,7 +899,7 @@ $('#slot-list').addEventListener('change', (e) => {
   toggleSlots(false);
 });
 
-// 第二頁依模式切換：預購模式隱藏缺貨偏好、填全名、稱謂老師／主任／其他、顯示取餐時間
+// 第二頁依模式切換：預購模式隱藏缺貨偏好、填全名、稱謂老師／學生／其他、顯示取餐時間
 function applyFormMode() {
   if (!settings) return;
   const presale = isPresaleMode();
@@ -894,6 +916,7 @@ function applyFormMode() {
   const chosen = presale ? d.presaleTitle : d.title;
   $('#title-chips').innerHTML = titles.map((v, i) => `<label class="radio-chip"><input type="radio" name="title" value="${v}" ${i === 0 ? 'required' : ''} ${v === chosen ? 'checked' : ''}><span>${escapeHtml(t(`title.${v}`))}</span></label>`).join('');
   if (presale && d.slotId) slotId = d.slotId;
+  renderClassField();
 }
 
 $('#view-checkout').addEventListener('click', (e) => {
@@ -938,7 +961,9 @@ form.phone.value = store.get(FORM_KEY, {}).phone || '';
 // 一般點餐與預購的姓名、稱謂分開保存
 form.addEventListener('input', () => {
   const d = store.get(FORM_KEY, {});
-  if (isPresaleMode()) Object.assign(d, { fullName: form.surname.value, presaleTitle: form.elements.title.value });
+  if (isPresaleMode()) {
+    Object.assign(d, { fullName: form.surname.value, presaleTitle: form.elements.title.value, className: form.elements.className.value });
+  }
   else Object.assign(d, { surname: form.surname.value, title: form.elements.title.value });
   d.phone = form.phone.value;
   store.set(FORM_KEY, d);
@@ -955,7 +980,14 @@ function markInvalid(els) {
 // 修改欄位後移除該欄位的紅框；全部填好時「必填」標籤恢復灰色
 form.addEventListener('input', (e) => {
   e.target.closest('.is-invalid')?.classList.remove('is-invalid');
-  if (e.target.name === 'title') form.querySelector('.name-row__title').classList.remove('is-invalid');
+  if (e.target.name === 'title') {
+    form.querySelector('.name-row__title').classList.remove('is-invalid');
+    // 學生與老師的件數上限可能不同：重新顯示班級選單與上限提醒
+    if (isPresaleMode()) {
+      renderClassField();
+      renderCheckout();
+    }
+  }
   if (!form.querySelector('.is-invalid')) form.classList.remove('is-error');
 });
 form.addEventListener('change', (e) => {
@@ -1044,11 +1076,13 @@ async function submit() {
   return undefined;
 }
 
-// 預購送出：全名至少 2 字、稱謂老師／主任／其他、取餐時段必選
+// 預購送出：全名至少 2 字、稱謂老師／學生／其他(學生必選班級)、取餐時段必選
 async function submitPresale(fullName, title, phone) {
   const invalid = [];
+  const className = title === STUDENT_TITLE ? form.elements.className.value : '';
   if ([...fullName].length < 2) invalid.push(form.surname);
   if (!PRESALE_TITLES.includes(title)) invalid.push(form.querySelector('.name-row__title'));
+  if (title === STUDENT_TITLE && !(settings.presaleClasses || []).includes(className)) invalid.push($('#class-field'));
   if (!isValidPhone(phone)) invalid.push(form.phone);
   if (!form.consent.checked) invalid.push(form.querySelector('.check'));
   const noSlot = !slotId || !availableSlots().some((s) => s.id === slotId);
@@ -1076,7 +1110,7 @@ async function submitPresale(fullName, title, phone) {
   try {
     const { orderId, no } = await api.submitPresale({
       lines: cart.lines, surname: fullName, title, phone, lang: getLang(),
-      consentText: consentInfo(settings, true).text, slotId,
+      consentText: consentInfo(settings, true).text, slotId, className,
     });
     const history = store.get(HISTORY_KEY, []);
     history.unshift({ orderId, no, at: Date.now() });

@@ -388,7 +388,10 @@ function renderOrder() {
   }
   if (order.status === 'ready') eta = t('track.etaReady');
   if (order.status === 'picked') eta = t('track.etaPicked', { time: time(order.pickedAt) });
-  if (presale && order.status === 'pending') eta = t('track.payHint', { t: settingText(settings, 'presaleTeacher') });
+  if (presale && order.status === 'pending') {
+    // 攤位現場建立的預購單：在攤位付款(不是向付款對象老師付款)
+    eta = order.onsite ? t('track.payHintOnsite') : t('track.payHint', { t: settingText(settings, 'presaleTeacher') });
+  }
   if (presale && order.status === 'accepted') eta = t('track.presaleAcceptedHint');
   if (expired) eta = '';
   $('#o-eta').textContent = eta;
@@ -400,7 +403,7 @@ function renderOrder() {
   if (presale && slot && !presaleVoid) presaleInfo.push(t('track.slot', { s: slotLabel(slot, getLang()) }));
   if (presale && order.status === 'pending' && !presaleVoid) presaleInfo.push(t('track.payBy', { t: dateTime(payDeadline(order)) }));
   $('#o-presale').hidden = !presaleInfo.length;
-  $('#o-presale').innerHTML = `<span class="order-hero__presale-lines">${presaleInfo.map((x) => escapeHtml(x)).join('<br>')}</span>`;
+  $('#o-presale').innerHTML = presaleInfo.map((x) => escapeHtml(x)).join('<br>');
 
   // 進度條(狀態沒變時不重畫，避免動畫重播)
   const steps = $('#o-steps');

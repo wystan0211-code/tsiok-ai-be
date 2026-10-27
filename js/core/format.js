@@ -71,9 +71,13 @@ export function statusLabel(o) {
   return STATUS_LABEL[o?.status] || o?.status || '';
 }
 
-// 稱謂選項(姓氏與稱謂皆必填)；預購模式改填全名，稱謂為老師／主任／其他
+// 稱謂選項(姓氏與稱謂皆必填)；預購模式改填全名，稱謂為老師／學生／其他(學生需選班級)
 export const TITLES = ['先生', '小姐', '其他'];
-export const PRESALE_TITLES = ['老師', '主任', '其他'];
+export const PRESALE_TITLES = ['老師', '學生', '其他'];
+export const STUDENT_TITLE = '學生';
+
+// 現場點餐固定多一個「現金」付款方式(不放進後台設定，線上的 A、C 單不會出現)
+export const CASH = '現金';
 
 // 顯示用姓名：姓氏 + 稱謂，例如「王先生」
 export function personName(surname, title) {

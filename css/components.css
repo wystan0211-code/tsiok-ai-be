@@ -3328,6 +3328,12 @@ body.is-viewer-open {
   border-color: var(--color-danger);
 }
 
+/* 學生沒選班級：選單紅框 */
+#class-field.is-invalid .select {
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 1px var(--color-danger);
+}
+
 .check.is-invalid {
   color: var(--color-danger);
 }
@@ -3441,12 +3447,12 @@ body.is-viewer-open {
 }
 
 /* 預購：「取餐時間」「付款期限」兩行開頭對齊，整段仍置中 */
-.order-hero__presale {
-  margin-top: var(--space-2);
-}
-
-.order-hero__presale-lines {
-  display: inline-block;
+/* 預購的取餐時間、付款期限：在訂單明細下方，靠左不縮排，樣式和品項備註相同 */
+.order-meta {
+  color: var(--color-text-muted);
+  font-size: 0.85em;
+  font-weight: var(--weight-regular);
+  line-height: 1.35;
   text-align: left;
 }
 
@@ -3543,6 +3549,17 @@ body.is-viewer-open {
 .slot-editor {
   display: grid;
   gap: var(--space-2);
+}
+
+.class-editor {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.class-editor__row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
 }
 
 .slot-editor__row {

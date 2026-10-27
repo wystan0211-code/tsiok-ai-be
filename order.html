@@ -166,7 +166,7 @@
           <span class="og__req contact-req" data-i18n="detail.required">必填</span>
         </div>
         <div class="name-row">
-          <!-- 一般點餐填姓氏；預購模式填全名(至少 2 字)，稱謂改為老師／主任／其他(由程式切換) -->
+          <!-- 一般點餐填姓氏；預購模式填全名(至少 2 字)，稱謂改為老師／學生／其他(由程式切換) -->
           <label class="field">
             <span id="name-label" class="field__label" data-i18n="order.surname">姓氏</span>
             <input class="input input--surname" name="surname" maxlength="10" autocomplete="family-name" required>
@@ -176,6 +176,11 @@
             <div id="title-chips" class="radio-group"></div>
           </fieldset>
         </div>
+        <!-- 預購選「學生」時：稱謂按鈕正下方出現班級選單(必填，班級清單在後台設定) -->
+        <label id="class-field" class="field" hidden>
+          <span class="field__label" data-i18n="order.className">班級</span>
+          <select class="select" name="className"></select>
+        </label>
         <label class="field">
           <span class="field__label" data-i18n="order.phone">手機號碼</span>
           <input class="input" name="phone" type="tel" inputmode="numeric" maxlength="12" autocomplete="tel" required placeholder="09xxxxxxxx">

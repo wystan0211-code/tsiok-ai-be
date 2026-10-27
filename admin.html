@@ -158,6 +158,14 @@
             <input class="input" name="presalePayHours" type="number" min="1" max="48" step="1" required></label>
           <label class="field"><span class="field__label">每張預購單最多幾件(空白為不限制)</span>
             <input class="input" name="presaleMaxItems" type="number" min="1" max="50" step="1"></label>
+          <label class="field"><span class="field__label">學生預購單最多幾件(空白時沿用左邊)</span>
+            <input class="input" name="presaleStudentMaxItems" type="number" min="1" max="50" step="1"></label>
+        </div>
+        <div class="field">
+          <span class="field__label">學生可選的班級(顧客選「學生」時必選，名稱不翻譯)</span>
+          <div id="class-editor" class="class-editor"></div>
+          <div><button id="class-add" class="btn btn--sm" type="button">
+            <span class="material-symbols-rounded icon icon--sm" aria-hidden="true">add</span>新增班級</button></div>
         </div>
         <fieldset class="field" style="border:none;padding:0;margin:0">
           <legend class="field__label">預購送出前的同意勾選文字</legend>

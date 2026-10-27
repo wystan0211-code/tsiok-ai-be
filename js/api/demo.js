@@ -7,7 +7,7 @@ import { formatNo, randomToken, startOfDay } from '../core/format.js';
 import {
   countItems, isFinal, priceLines, stockProblems, stockUpdates, ORDER_TTL_MS, ACTIVE_STATUSES,
   optionProblems, cleanLines,
-  orderMode, presaleIssues, slotLeft, isPresale, isPresaleVoid, PRESALE_PAY_HOURS, presaleBlockers,
+  orderMode, presaleIssues, slotLeft, isPresale, isPresaleVoid, PRESALE_PAY_HOURS, presaleBlockers, presaleItemLimit,
 } from '../core/order-logic.js';
 import { SUB_PREFS, applyLineChanges } from '../core/shortage.js';
 
@@ -323,7 +323,7 @@ export const api = {
   },
 
   // ===== 預購(C 單)：與正式版相同 =====
-  async submitPresale({ lines, surname, title, phone, consentText, lang = 'zh-Hant', slotId }) {
+  async submitPresale({ lines, surname, title, phone, consentText, lang = 'zh-Hant', slotId, className = '' }) {
     await delay(300);
     const uid = customerUid();
     const settings = { ...DEFAULT_SETTINGS, ...db.settings };
@@ -332,7 +332,9 @@ export const api = {
     if (!slot || slotLeft(slot, db.presaleStats.slots) <= 0) throw new ApiError('slot-invalid');
     const count = countItems(lines);
     if (count < 1) throw new ApiError('invalid');
-    if (settings.presaleMaxItems && count > settings.presaleMaxItems) throw new ApiError('over-limit');
+    const limit = presaleItemLimit(settings, title);
+    if (limit && count > limit) throw new ApiError('over-limit');
+    if (title === '學生' && !(settings.presaleClasses || []).includes(className)) throw new ApiError('invalid', '請選擇班級。');
     const session = db.sessions[uid];
     if (!session || session.used) throw new ApiError('session-invalid');
     const lock = db.activePhones[phone];
@@ -349,6 +351,7 @@ export const api = {
       id, type: 'presale', seq, no, status: 'pending', uid, paid: false,
       payHours: Number(settings.presalePayHours) || PRESALE_PAY_HOURS, slotId,
       items: cleanLines(lines, itemsMap()), itemCount: count, surname, title, lang, pushEnabled: false, messages: [],
+      ...(title === '學生' ? { className } : {}),
       createdAt: now, updatedAt: now,
     };
     db.contacts[id] = { orderId: id, surname, phone, consentNotify: true, consentText, consentAt: now, createdAt: now };
@@ -359,14 +362,54 @@ export const api = {
     return { orderId: id, no };
   },
 
+  async createPresaleOnsite({ lines, surname, title, className = '', phone = '', slotId }) {
+    await delay(300);
+    requireRole(MANAGER);
+    const settings = { ...DEFAULT_SETTINGS, ...db.settings };
+    if (orderMode(settings) !== 'presale') throw new ApiError('presale-closed');
+    const slot = (settings.presaleSlots || []).find((x) => x.id === slotId);
+    if (!slot || slotLeft(slot, db.presaleStats.slots) <= 0) throw new ApiError('slot-invalid');
+    const count = countItems(lines);
+    if (count < 1) throw new ApiError('invalid');
+    const limit = presaleItemLimit(settings, title);
+    if (limit && count > limit) throw new ApiError('over-limit', `超過件數上限(最多 ${limit} 件)。`);
+    if (title === '學生' && !(settings.presaleClasses || []).includes(className)) throw new ApiError('invalid', '請選擇班級。');
+    if (phone) {
+      const lock = db.activePhones[phone];
+      const prev = lock && db.orders[lock.orderId];
+      if (prev && !isFinal(prev) && !isPresaleVoid(prev)) throw new ApiError('phone-active', `這支電話已有進行中的訂單 ${prev.no || ''}。`);
+    }
+    const problems = [...presaleBlockers(lines, itemsMap()), ...optionProblems(lines, itemsMap())];
+    if (problems.length) throw new ApiError('sold-out', `無法供應：${problems.join('、')}`);
+    if (presaleIssues(lines, itemsMap(), db.presaleStats.sold).length) throw new ApiError('presale-limit');
+    const id = newId();
+    const seq = nextSeq('C');
+    const no = formatNo('presale', seq);
+    const now = Date.now();
+    db.orders[id] = {
+      id, type: 'presale', onsite: true, seq, no, status: 'pending', uid: null, claimedBy: null, paid: false,
+      payHours: Number(settings.presalePayHours) || PRESALE_PAY_HOURS, slotId,
+      items: cleanLines(lines, itemsMap()), itemCount: count, surname, title, lang: 'zh-Hant', pushEnabled: false, messages: [],
+      ...(title === '學生' ? { className } : {}),
+      createdBy: currentStaff()?.uid || null, createdAt: now, updatedAt: now,
+    };
+    if (phone) {
+      db.contacts[id] = { orderId: id, surname, phone, consentNotify: true, consentText: '現場口頭同意', consentAt: now, createdAt: now };
+      db.lookups[`${no}_${phone}`] = { orderId: id, createdAt: now };
+    }
+    commit();
+    return { orderId: id, no, total: priceLines(lines, itemsMap()).total };
+  },
+
   watchPresaleStats(cb) {
     return watch((d) => ({ slots: { ...(d.presaleStats?.slots || {}) }, sold: { ...(d.presaleStats?.sold || {}) } }), cb);
   },
 
-  async markPresalePaid(orderId, slotId = null) {
+  async markPresalePaid(orderId, slotId = null, payment = '') {
     await delay();
-    requireRole(PRESALE_MGR);
     const o = getOrder(orderId);
+    // 現場建立的預購單：攤位主管也可以標示已付款
+    requireRole(o.onsite ? [...new Set([...PRESALE_MGR, ...MANAGER])] : PRESALE_MGR);
     if (o.type !== 'presale' || o.status !== 'pending' || o.paid) throw new ApiError('bad-state');
     const settings = { ...DEFAULT_SETTINGS, ...db.settings };
     const stats = db.presaleStats;
@@ -385,14 +428,15 @@ export const api = {
       status: 'accepted', paid: true, paidAt: now, lines: priced.lines, total: priced.total,
       acceptedAt: now, establishedAt: now, updatedAt: now,
       ...(target !== o.slotId ? { slotId: target, slotChanged: true } : {}),
+      ...(o.onsite && payment ? { payment } : {}),
     });
     commit();
   },
 
   async markPresaleUnpaid(orderId, hours) {
     await delay();
-    requireRole(PRESALE_MGR);
     const o = getOrder(orderId);
+    requireRole(o.onsite ? [...new Set([...PRESALE_MGR, ...MANAGER])] : PRESALE_MGR);
     if (o.type !== 'presale' || o.status !== 'accepted' || !o.paid) throw new ApiError('bad-state');
     const stats = db.presaleStats;
     for (const l of (o.lines?.length ? o.lines : o.items)) stats.sold[l.itemId] = Math.max(0, (stats.sold[l.itemId] || 0) - l.qty);
@@ -501,7 +545,7 @@ export const api = {
     const uid = customerUid();
     const o = getOrder(orderId);
     if (o.uid === uid || o.claimedBy === uid) return true;
-    if (o.type !== 'walkin') return false;
+    if (o.type !== 'walkin' && !o.onsite) return false;
     if (o.claimedBy) throw new ApiError('claimed');
     Object.assign(o, { claimedBy: uid, updatedAt: Date.now() });
     commit();

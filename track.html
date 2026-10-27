@@ -81,8 +81,6 @@
         <p id="o-no" class="display-no order-hero__no"></p>
         <p id="o-status" class="order-hero__status"></p>
         <p id="o-eta" class="muted"></p>
-        <!-- 預購：取餐時間與付款期限 -->
-        <p id="o-presale" class="muted text-sm order-hero__presale" hidden></p>
       </div>
 
       <div id="o-alert"></div>
@@ -111,6 +109,8 @@
         <h2 class="section-title" data-i18n="track.detailsTitle">訂單明細</h2>
         <div id="o-lines"></div>
         <div class="summary-row summary-row--total"><span data-i18n="order.total">總金額</span><span id="o-total"></span></div>
+        <!-- 預購：取餐時間與付款期限(在訂單明細下方，靠左、字小一號、灰色) -->
+        <p id="o-presale" class="order-meta" hidden></p>
         <div id="o-time" class="muted text-xs"></div>
       </section>
 

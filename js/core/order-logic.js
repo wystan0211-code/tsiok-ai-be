@@ -67,6 +67,14 @@ export function visibleIn(entry, mode) {
   return entry?.showNormal !== false;
 }
 
+// 預購單的件數上限：學生用「學生預購單最多幾件」，空白時沿用「每張預購單最多幾件」；都空白回傳 null(不限制)
+// firestore.rules 的 presaleLimitOk() 規則相同，兩邊要一起改
+export function presaleItemLimit(settings, title) {
+  const general = Number(settings?.presaleMaxItems) || 0;
+  const student = Number(settings?.presaleStudentMaxItems) || 0;
+  return (title === '學生' && student) || general || null;
+}
+
 // 預購期間每個商品的剩餘數量(沒有設定上限時為 null)；sold 為 presaleStats/main 的 sold { 品項ID: 已付款數量 }
 export function presaleLeft(item, sold = {}) {
   if (item?.presaleLimit == null || item.presaleLimit === '') return null;

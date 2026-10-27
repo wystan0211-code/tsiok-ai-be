@@ -172,7 +172,7 @@ window.addEventListener('resize', updateScrollShadow);
 function renderDone() {
   const d = screen.done || {};
   $('#cs-no').textContent = d.no || '';
-  $('#cs-paid').textContent = t('screen.paid', { total: money(d.total) }, lang);
+  $('#cs-paid').textContent = t(d.unpaid ? 'screen.toPay' : 'screen.paid', { total: money(d.total) }, lang);
   $('#cs-qr-box').hidden = !d.url;
   $('#cs-qr').innerHTML = d.url ? qrSvg(d.url) : '';
 }

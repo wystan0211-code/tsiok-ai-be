@@ -145,6 +145,8 @@
           <div class="segmented" role="group" aria-label="取餐方式">
             <button type="button" data-mode="now" aria-pressed="true">立即取餐</button>
             <button type="button" data-mode="later" aria-pressed="false">稍後取餐</button>
+            <!-- 平台模式為「預購」時，攤位主管與管理員可以在現場建立預購單(C) -->
+            <button type="button" data-mode="presale" aria-pressed="false" hidden>預購</button>
           </div>
           <fieldset class="field" style="border:none;padding:0;margin:0">
             <legend class="field__label">付款方式</legend>
@@ -168,6 +170,32 @@
             <label class="field">
               <span class="field__label">手機號碼(選填，可用簡訊通知)</span>
               <input class="input" name="phone" type="tel" inputmode="numeric" maxlength="12" placeholder="09xxxxxxxx">
+            </label>
+          </div>
+          <!-- 現場預購：送出後是「請付款」的 C 單，標示已付款時才選付款方式 -->
+          <div id="pos-presale-fields" class="stack" hidden>
+            <p class="muted text-sm">送出後是一張「請付款」的預購單，收款後在看板按「標示已付款」才會成立。</p>
+            <div class="name-row">
+              <label class="field">
+                <span class="field__label">全名</span>
+                <input class="input input--fullname" name="pFullName" maxlength="10" autocomplete="off">
+              </label>
+              <fieldset class="name-row__title">
+                <legend class="visually-hidden">稱謂</legend>
+                <div id="pos-ptitle" class="radio-group"></div>
+              </fieldset>
+            </div>
+            <label id="pos-pclass-field" class="field" hidden>
+              <span class="field__label">班級</span>
+              <select class="select" name="pClass"></select>
+            </label>
+            <label class="field">
+              <span class="field__label">手機號碼(選填，可用簡訊通知)</span>
+              <input class="input" name="pPhone" type="tel" inputmode="numeric" maxlength="12" placeholder="09xxxxxxxx">
+            </label>
+            <label class="field">
+              <span class="field__label">取餐時段</span>
+              <select class="select" name="pSlot"></select>
             </label>
           </div>
           <p id="pos-error" class="banner banner--danger" hidden></p>
