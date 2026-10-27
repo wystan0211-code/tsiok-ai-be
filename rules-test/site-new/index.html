@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-Hant-TW" class="home-root" data-i18n-page="on" data-i18n-title="home.title">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#fffff8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="九愛！買">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="assets/brand/favicon-64.png">
+<link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,add_photo_alternate,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,cast,cast_connected,cast_pause,cast_warning,chat,check,check_circle,chevron_left,chevron_right,close,content_copy,delete,done_all,download,edit,error,event,expand_more,fullscreen,group,image,inbox,info,inventory_2,language,link_off,login,logout,near_me,notifications,notifications_active,notifications_off,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,swap_horiz,sync,timer,tune,tv,undo,upload,view_kanban,visibility,volume_up,warning,zoom_in,zoom_out&display=block">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/components.css">
+<title>九愛！買｜預先點餐</title>
+<script type="module" src="js/pages/entry.js"></script>
+</head>
+<body class="home">
+  <!-- 延伸區：設計圖以外的空間(較長手機的上方、電腦與平板的左右兩側)
+       設計稿中 logo 帶上方與下方的星星是兩個錯開的圖層，所以分別延伸，並把 logo 帶延長到畫面兩側 -->
+  <div class="home__pattern" aria-hidden="true"></div>
+  <div class="home__upper" aria-hidden="true"><div class="home__pattern home__pattern--top"></div></div>
+  <div class="home__band-ext home__band-ext--line" aria-hidden="true"></div>
+  <div class="home__band-ext home__band-ext--fill" aria-hidden="true"></div>
+
+  <!-- 語言選單(左上角地球按鈕) -->
+  <div class="home__lang">
+    <button id="lang-btn" class="home__globe press" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="lang-menu" data-i18n-aria="common.language" aria-label="語言">
+      <span class="material-symbols-rounded icon" aria-hidden="true">language</span>
+    </button>
+    <div id="lang-menu" class="lang-menu" hidden>
+      <button type="button" class="lang-menu__item" data-lang="zh-Hant" lang="zh-Hant-TW"><span>繁體中文</span><span class="material-symbols-rounded icon icon--sm lang-menu__check" aria-hidden="true">check</span></button>
+      <button type="button" class="lang-menu__item" data-lang="en" lang="en"><span>English</span><span class="material-symbols-rounded icon icon--sm lang-menu__check" aria-hidden="true">check</span></button>
+      <button type="button" class="lang-menu__item" data-lang="ja" lang="ja"><span>日本語</span><span class="material-symbols-rounded icon icon--sm lang-menu__check" aria-hidden="true">check</span></button>
+    </div>
+  </div>
+
+  <div class="home__art">
+    <img id="home-img" class="home__img" src="assets/brand/home-design-m.webp"
+      srcset="assets/brand/home-design-m.webp 1242w, assets/brand/home-design.webp 2160w" sizes="min(100vw, 56.25vh)" width="2160" height="3840"
+      alt="九愛！買 Tsiok ài bé。線上先點餐。就是快 Just Grab &amp; Go" data-i18n-alt="home.alt" decoding="async" fetchpriority="high">
+
+    <!-- 按鈕區：位置與大小依設計稿量測 -->
+    <div id="state-loading" class="home__slot home__slot--plain">
+      <span class="material-symbols-rounded icon spin" aria-hidden="true">progress_activity</span>
+      <span class="visually-hidden" data-i18n="common.loading">載入中</span>
+    </div>
+    <p id="state-closed" class="home__slot home__slot--plain home__closed" data-i18n="home.closed" hidden>攤位目前暫停接受預點，請直接到攤位點餐</p>
+    <span id="state-active" hidden></span>
+    <!-- 在 LINE 內建瀏覽器開啟時：不顯示開始按鈕，改請顧客用相機或掃描工具 -->
+    <p id="state-line" class="home__slot home__slot--plain home__closed" data-i18n="home.lineTip" hidden>請用手機相機或 QR code 掃描工具重新掃描。LINE 內無法接收取餐通知。</p>
+
+    <button id="start-btn" class="home__slot home__start press" type="button" hidden>
+      <span id="start-label" data-i18n="home.start">開始</span>
+      <span class="material-symbols-rounded icon home__chevron" aria-hidden="true">chevron_right</span>
+    </button>
+    <a id="active-link" class="home__slot home__start press" href="track.html" hidden>
+      <span data-i18n="home.viewOrder">查看訂單進度</span> <span id="active-no" class="display-no"></span>
+      <span class="material-symbols-rounded icon home__chevron" aria-hidden="true">chevron_right</span>
+    </a>
+
+    <!-- 找回訂單：功能保留，目前版本暫時隱藏(移除 hidden 即可恢復) -->
+    <a id="find-link" class="btn btn--ghost btn--sm" href="track.html" hidden>
+      <span class="material-symbols-rounded icon icon--sm" aria-hidden="true">search</span>
+      <span data-i18n="home.findOrder">找回我的訂單</span>
+    </a>
+  </div>
+</body>
+</html>

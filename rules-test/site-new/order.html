@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="zh-Hant-TW" data-i18n-page="on" data-i18n-title="order.title">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#fffff8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="九愛！買">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="assets/brand/favicon-64.png">
+<link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,add_photo_alternate,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,cast,cast_connected,cast_pause,cast_warning,chat,check,check_circle,chevron_left,chevron_right,close,content_copy,delete,done_all,download,edit,error,event,expand_more,fullscreen,group,image,inbox,info,inventory_2,language,link_off,login,logout,near_me,notifications,notifications_active,notifications_off,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,swap_horiz,sync,timer,tune,tv,undo,upload,view_kanban,visibility,volume_up,warning,zoom_in,zoom_out&display=block">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/components.css">
+<script src="js/core/page-wait-boot.js"></script>
+<title>九愛！買｜點餐</title>
+<script type="module" src="js/pages/order.js"></script>
+</head>
+<body>
+  <header class="topbar topbar--fixed">
+    <div class="topbar__inner">
+      <img class="topbar__logo" src="assets/brand/logo-horizontal.png" alt="九愛！買" width="640" height="260">
+      <span class="topbar__spacer"></span>
+      <a id="back-btn" class="btn btn--ghost btn--icon" href="index.html" aria-label="回到首頁" data-i18n-aria="common.backHome">
+        <span class="material-symbols-rounded icon" aria-hidden="true">arrow_back_ios_new</span>
+      </a>
+    </div>
+  </header>
+
+  <!-- 跑馬燈：只在菜單畫面顯示，內容由後台設定 -->
+  <div id="marquee" class="marquee" hidden>
+    <div class="marquee__track"><span class="marquee__text"></span><span class="marquee__text" aria-hidden="true"></span></div>
+  </div>
+
+  <main class="page stack">
+    <section id="state-loading" class="loading">
+      <span class="material-symbols-rounded icon spin" aria-hidden="true">progress_activity</span>
+      <span data-i18n="common.loading">載入中</span>
+    </section>
+
+    <section id="state-invalid" class="card stack" hidden>
+      <div class="banner banner--danger">
+        <span class="material-symbols-rounded icon" aria-hidden="true">link_off</span>
+        <p id="invalid-text" data-i18n="order.invalid">點餐連結已失效，請重新掃描攤位的 QR code。</p>
+      </div>
+      <a id="invalid-action" class="btn btn--primary btn--block" href="index.html" data-i18n="order.toEntry">回到入口</a>
+    </section>
+
+    <section id="state-closed" class="card" hidden>
+      <div class="banner banner--danger">
+        <span class="material-symbols-rounded icon" aria-hidden="true">block</span>
+        <p data-i18n="order.closed">攤位目前暫停接受預點，請直接到攤位點餐。</p>
+      </div>
+    </section>
+
+    <!-- 菜單 -->
+    <section id="view-menu" class="menu-view" hidden>
+      <div id="carousel" class="carousel" role="region" aria-roledescription="carousel" data-i18n-aria="carousel.label" aria-label="宣傳輪播" hidden>
+        <div class="carousel__frame">
+          <div id="carousel-track" class="carousel__track"></div>
+          <button type="button" class="carousel__nav carousel__nav--prev" data-carousel="prev" aria-label="上一張" data-i18n-aria="carousel.prev">
+            <span class="material-symbols-rounded icon" aria-hidden="true">chevron_left</span>
+          </button>
+          <button type="button" class="carousel__nav carousel__nav--next" data-carousel="next" aria-label="下一張" data-i18n-aria="carousel.next">
+            <span class="material-symbols-rounded icon" aria-hidden="true">chevron_right</span>
+          </button>
+        </div>
+        <div id="carousel-dots" class="carousel__dots" aria-hidden="true"></div>
+      </div>
+
+      <nav id="cat-bar" class="cat-bar" aria-label="菜單分類" data-i18n-aria="menu.categories" hidden>
+        <div id="cat-track" class="cat-bar__track"></div>
+      </nav>
+
+      <div id="menu-sections"></div>
+    </section>
+
+    <!-- 品項詳細頁 -->
+    <section id="view-detail" class="detail" hidden>
+      <div class="gallery">
+        <div id="gallery-track" class="gallery__track"></div>
+        <span id="gallery-count" class="gallery__count" hidden></span>
+      </div>
+      <div class="detail__info stack">
+        <div class="detail__head">
+          <h1 id="d-name" class="detail__name"></h1>
+          <!-- 價格在左，製作時間緊接在右側(不貼齊右邊) -->
+          <div class="detail__line">
+            <p id="d-price" class="detail__price"></p>
+            <span id="d-prep" class="detail__prep" hidden></span>
+          </div>
+        </div>
+        <p id="d-desc" class="detail__desc"></p>
+        <p id="d-meta" class="detail__tags" hidden></p>
+        <!-- 選項群組(必填單選、非必填複選、必填複選) -->
+        <div id="d-groups" class="og-list" hidden></div>
+        <div class="row row--between">
+          <span class="field__label" data-i18n="order.qty">數量</span>
+          <div class="stepper">
+            <button type="button" class="press" data-detail="minus" aria-label="減少" data-i18n-aria="order.decreaseShort">
+              <span class="material-symbols-rounded icon icon--sm" aria-hidden="true">remove</span>
+            </button>
+            <span id="d-qty" class="stepper__value" aria-live="polite">1</span>
+            <button type="button" class="press" data-detail="plus" aria-label="增加" data-i18n-aria="order.increaseShort">
+              <span class="material-symbols-rounded icon icon--sm" aria-hidden="true">add</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 確認訂單第一頁：明細與金額 -->
+    <section id="view-checkout" class="stack checkout-page" hidden>
+      <div class="card">
+        <h2 class="section-title" data-i18n="order.checkoutTitle">確認訂單</h2>
+        <div id="cart-lines"></div>
+        <!-- 數量與總金額間距 8px，總金額與付款說明間距 12px -->
+        <div class="stack checkout-sum" style="margin-top:var(--space-3)">
+          <div class="summary-row"><span data-i18n="order.qty">數量</span><span id="cart-count"></span></div>
+          <div class="summary-row summary-row--total checkout-sum__total"><span data-i18n="order.total">總金額</span><span id="cart-total"></span></div>
+          <!-- 付款說明：一般點餐「請至攤位以園遊券付款」，預購模式顯示付款期限與付款對象(程式設定) -->
+          <p id="pay-note" class="muted text-xs checkout-sum__note"></p>
+          <div id="limit-warning" class="banner banner--danger" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 確認訂單第二頁：缺貨偏好、取餐聯絡資料 -->
+    <section id="view-info" class="stack checkout-page" hidden>
+      <section id="sub-box" class="card sub-box" aria-labelledby="sub-title">
+        <div class="sub-box__head">
+          <h2 id="sub-title" class="section-title" data-i18n="sub.title">如果特定商品已售完</h2>
+          <span class="og__req sub-box__req" data-i18n="detail.required">必填</span>
+        </div>
+        <div class="sub-box__rows" role="radiogroup" aria-labelledby="sub-title">
+          <label class="sub-row">
+            <span class="material-symbols-rounded icon sub-row__icon" aria-hidden="true">check_circle</span>
+            <span class="sub-row__text"><span data-i18n="sub.choose">立即選擇替代商品</span><span class="sub-row__hint" data-i18n="sub.chooseHint">從替代清單中選擇</span></span>
+            <input class="og__input" type="radio" name="subPref" value="choose">
+            <span class="og__mark og__mark--radio" aria-hidden="true"></span>
+          </label>
+          <label class="sub-row">
+            <span class="material-symbols-rounded icon sub-row__icon" aria-hidden="true">sync</span>
+            <span class="sub-row__text"><span data-i18n="sub.similar">更換為任何類似商品</span><span class="sub-row__hint" data-i18n="sub.similarHint">攤位會挑選其他口味或其他品項</span></span>
+            <input class="og__input" type="radio" name="subPref" value="similar">
+            <span class="og__mark og__mark--radio" aria-hidden="true"></span>
+          </label>
+          <label class="sub-row">
+            <span class="material-symbols-rounded icon sub-row__icon" aria-hidden="true">close</span>
+            <span class="sub-row__text"><span data-i18n="sub.remove">刪除該品項</span></span>
+            <input class="og__input" type="radio" name="subPref" value="remove">
+            <span class="og__mark og__mark--radio" aria-hidden="true"></span>
+          </label>
+        </div>
+      </section>
+
+      <form id="checkout-form" class="card stack" novalidate>
+        <!-- 標題右側「必填」：欄位沒填時變紅 -->
+        <div class="sub-box__head">
+          <h2 class="section-title" data-i18n="order.contactTitle">取餐聯絡資料</h2>
+          <span class="og__req contact-req" data-i18n="detail.required">必填</span>
+        </div>
+        <div class="name-row">
+          <!-- 一般點餐填姓氏；預購模式填全名(至少 2 字)，稱謂改為老師／學生／其他(由程式切換) -->
+          <label class="field">
+            <span id="name-label" class="field__label" data-i18n="order.surname">姓氏</span>
+            <input class="input input--surname" name="surname" maxlength="10" autocomplete="family-name" required>
+          </label>
+          <fieldset class="name-row__title">
+            <legend class="visually-hidden" data-i18n="order.titleLegend">稱謂</legend>
+            <div id="title-chips" class="radio-group"></div>
+          </fieldset>
+        </div>
+        <!-- 預購選「學生」時：稱謂按鈕正下方出現班級選單(必填，班級清單在後台設定) -->
+        <label id="class-field" class="field" hidden>
+          <span class="field__label" data-i18n="order.className">班級</span>
+          <select class="select" name="className"></select>
+        </label>
+        <label class="field">
+          <span class="field__label" data-i18n="order.phone">手機號碼</span>
+          <input class="input" name="phone" type="tel" inputmode="numeric" maxlength="12" autocomplete="tel" required placeholder="09xxxxxxxx">
+        </label>
+        <label class="check">
+          <input type="checkbox" name="consent" required>
+          <span id="consent-text"></span>
+        </label>
+        <!-- 欄位以外的訊息(售完、暫停接單、錯誤代碼等)：紅底白字 -->
+        <p id="form-error" class="banner banner--solid-danger" hidden></p>
+      </form>
+
+      <!-- 預購模式：取餐時間(收合清單，依日期分組) -->
+      <section id="slot-box" class="card stack slot-box" aria-labelledby="slot-title" hidden>
+        <div class="sub-box__head">
+          <h2 id="slot-title" class="section-title" data-i18n="slot.title">取餐時間</h2>
+          <span class="og__req slot-req" data-i18n="detail.required">必填</span>
+        </div>
+        <button id="slot-toggle" type="button" class="slot-select" aria-expanded="false" aria-controls="slot-list">
+          <span id="slot-current" class="slot-select__value"></span>
+          <span class="material-symbols-rounded icon slot-select__chevron" aria-hidden="true">expand_more</span>
+        </button>
+        <div id="slot-list" class="slot-list" hidden></div>
+      </section>
+    </section>
+  </main>
+
+  <!-- 全螢幕照片檢視 -->
+  <div id="viewer" class="viewer" role="dialog" aria-modal="true" hidden>
+    <div id="viewer-track" class="viewer__track"></div>
+    <span id="viewer-count" class="viewer__count"></span>
+    <button id="viewer-close" type="button" class="viewer__close" aria-label="關閉" data-i18n-aria="common.close">
+      <span class="material-symbols-rounded icon" aria-hidden="true">close</span>
+    </button>
+  </div>
+
+  <div id="detail-bar" class="cart-bar detail-bar" hidden>
+    <div class="cart-bar__inner">
+      <button id="detail-add" type="button" class="btn btn--primary btn--lg btn--block press" data-i18n="detail.addToOrder">加入訂單</button>
+    </div>
+  </div>
+
+  <!-- 確認訂單第一頁的「繼續」、第二頁的「送出訂單」：固定在畫面底部，不放在任何資訊方框內 -->
+  <div id="checkout-bar" class="cart-bar detail-bar" hidden>
+    <div class="cart-bar__inner">
+      <button id="continue-btn" type="button" class="btn btn--primary btn--lg btn--block press" data-i18n="order.continue">繼續</button>
+    </div>
+  </div>
+
+  <div id="info-bar" class="cart-bar detail-bar" hidden>
+    <div class="cart-bar__inner">
+      <button id="submit-btn" class="btn btn--primary btn--lg btn--block press" type="submit" form="checkout-form" data-i18n="order.submit">送出訂單</button>
+    </div>
+  </div>
+
+  <div id="cart-bar" class="cart-bar" hidden>
+    <div class="cart-bar__inner">
+      <a class="btn btn--primary btn--lg btn--block" href="#checkout">
+        <span class="material-symbols-rounded icon" aria-hidden="true">shopping_bag</span>
+        <span id="cart-bar-text">查看訂單</span>
+      </a>
+    </div>
+  </div>
+</body>
+</html>

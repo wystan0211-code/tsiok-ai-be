@@ -32,6 +32,10 @@ jobs:
         run: (LINES=5 PHONE=0999999995 node prod-probe.mjs; LINES=10 PHONE=0999999910 node prod-probe.mjs) | tee probe.txt
       - if: always()
         run: tr '\n' ' ' < probe.txt | sed 's/^/::notice title=probe::/' || true
+      - run: (cd site-new && python3 -m http.server 8001 >/dev/null 2>&1 &)
+      - run: npx firebase emulators:exec --only firestore,auth --project demo-tsiok "node onsite.mjs" | tee onsite.txt
+      - if: always()
+        run: grep '^\[onsite\]' onsite.txt | tr '\n' ' ' | sed 's/^/::notice title=onsite::/' || true
       - run: node prod-read.mjs | tee prod.txt
       - if: always()
         run: tr '\n' ' ' < prod.txt | sed 's/^/::notice title=prod::/' || true

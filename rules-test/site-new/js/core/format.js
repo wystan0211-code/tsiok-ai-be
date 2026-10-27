@@ -1,0 +1,111 @@
+// 格式化工具：訂單編號、金額、時間、狀態文字
+
+// 訂單類型對應的編號字首：預點 A、現場 B、預購 C、管理員手動新增 M
+export const PREFIX = { preorder: 'A', walkin: 'B', presale: 'C', manual: 'M' };
+
+export function formatNo(type, seq) {
+  const prefix = PREFIX[type] ?? 'X';
+  return prefix + String(seq ?? 0).padStart(3, '0');
+}
+
+export function money(n) {
+  return `NT$ ${Number(n || 0).toLocaleString('zh-TW')}`;
+}
+
+export function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+export function time(ms) {
+  if (!ms) return '--:--';
+  const d = new Date(ms);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+export function dateTime(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${time(ms)}`;
+}
+
+// 距今幾分鐘
+export function minutesSince(ms, now = Date.now()) {
+  return ms ? Math.max(0, Math.floor((now - ms) / 60000)) : 0;
+}
+
+export function startOfDay(ms = Date.now()) {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+// 轉成 <input type="date"> 使用的 yyyy-mm-dd
+export function toDateInput(ms) {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+// 從 yyyy-mm-dd 取得當地時間 0 點的毫秒數
+export function fromDateInput(value) {
+  const [y, m, d] = value.split('-').map(Number);
+  return new Date(y, m - 1, d).getTime();
+}
+
+export const STATUS_LABEL = {
+  pending: '等待接單',
+  accepted: '製作中',
+  ready: '可取餐',
+  picked: '已取餐',
+  rejected: '已拒絕',
+  cancelled: '已取消',
+};
+
+export const TYPE_LABEL = { preorder: '預點', walkin: '現場', presale: '預購', manual: '手動' };
+
+// 預購單的狀態文字(攤位端與後台)：未付款「請付款」、已付款「已接單」
+export const PRESALE_STATUS_LABEL = { pending: '請付款', accepted: '已接單' };
+
+// 依訂單類型取得狀態文字
+export function statusLabel(o) {
+  if (o?.type === 'presale' && PRESALE_STATUS_LABEL[o.status]) return PRESALE_STATUS_LABEL[o.status];
+  return STATUS_LABEL[o?.status] || o?.status || '';
+}
+
+// 稱謂選項(姓氏與稱謂皆必填)；預購模式改填全名，稱謂為老師／學生／其他(學生需選班級)
+export const TITLES = ['先生', '小姐', '其他'];
+export const PRESALE_TITLES = ['老師', '學生', '其他'];
+export const STUDENT_TITLE = '學生';
+
+// 現場點餐固定多一個「現金」付款方式(不放進後台設定，線上的 A、C 單不會出現)
+export const CASH = '現金';
+
+// 顯示用姓名：姓氏 + 稱謂，例如「王先生」
+export function personName(surname, title) {
+  return `${surname || ''}${surname ? title || '' : ''}`;
+}
+
+export const ROLE_LABEL = { admin: '管理員', manager: '攤位主管', staff: '店員', presale: '預購主管' };
+
+export function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+// 品項名稱 + 備註(口味、選項)：備註不用括號，換到下一行縮排、字較細較小(樣式見 .line-note)
+// 試算表、匯出檔、收件匣訊息、缺貨提示句子仍用 lineLabel 的括號寫法
+export function lineWithNote(name, note) {
+  return `<span class="line-name">${escapeHtml(name)}</span>${note ? `<span class="line-note">${escapeHtml(note)}</span>` : ''}`;
+}
+
+// 產生隨機十六進位字串(用於一次性點餐連結)
+export function randomToken(bytes = 16) {
+  const arr = new Uint8Array(bytes);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// 簡訊範本代換：{no} 訂單編號、{surname} 姓氏
+export function fillTemplate(template, data) {
+  return String(template || '').replace(/\{(\w+)\}/g, (_, key) => data[key] ?? '');
+}
