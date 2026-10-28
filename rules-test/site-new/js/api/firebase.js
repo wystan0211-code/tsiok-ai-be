@@ -6,9 +6,9 @@ import { DEFAULT_SETTINGS } from '../core/defaults.js';
 import { formatNo, randomToken, startOfDay, pad2 } from '../core/format.js';
 import { itemImageRefs, imageDocId } from '../core/images.js';
 import {
-  countItems, isFinal, priceLines, stockProblems, stockUpdates, ORDER_TTL_MS, ACTIVE_STATUSES,
+  countItems, isFinal, priceLines, stockProblems, stockUpdates, stockPatches, choiceProblems, ORDER_TTL_MS, ACTIVE_STATUSES,
   optionProblems, cleanLines,
-  orderMode, presaleIssues, slotLeft, isPresale, isPresaleVoid, PRESALE_PAY_HOURS, presaleBlockers, presaleItemLimit,
+  orderMode, presaleIssues, slotLeft, isPresale, isPresaleVoid, PRESALE_PAY_HOURS, presaleBlockers, presaleItemLimit, canEditOrder,
 } from '../core/order-logic.js';
 import { SUB_PREFS, applyLineChanges } from '../core/shortage.js';
 
@@ -131,7 +131,7 @@ async function diagnoseSubmit({ uid, lines, surname, title, phone, consentText, 
     const st = setSnap.exists() ? setSnap.data() : null;
     if (!st) codes.push('ST-0');
     else {
-      if (st.acceptingPreorders !== true) codes.push('ST-A');
+      if (orderMode(st) !== 'open') codes.push('ST-A');
       if (typeof st.maxItemsPerOrder !== 'number') codes.push('ST-M');
       else if (count > st.maxItemsPerOrder) codes.push('ST-L');
     }
@@ -355,7 +355,7 @@ export const api = {
     if (!SUB_PREFS.includes(subPref)) throw new ApiError('invalid');
     const uid = await customerUid();
     const settings = { ...DEFAULT_SETTINGS, ...(snapData(await getDoc(ref('settings', 'app'))) || {}) };
-    if (!settings.acceptingPreorders) throw new ApiError('closed');
+    if (orderMode(settings) !== 'open') throw new ApiError('closed');
     const count = countItems(lines);
     if (count < 1) throw new ApiError('invalid');
     if (count > settings.maxItemsPerOrder) throw new ApiError('over-limit');
@@ -462,7 +462,8 @@ export const api = {
   createPresaleOnsite: ({ lines, surname, title, className = '', phone = '', slotId }) => guard(async () => {
     const staffUid = auth.currentUser?.uid;
     const settings = { ...DEFAULT_SETTINGS, ...(snapData(await getDoc(ref('settings', 'app'))) || {}) };
-    if (orderMode(settings) !== 'presale') throw new ApiError('presale-closed');
+    // 現場預購不受平台模式限制(顧客端關閉時也可以建立)
+    
     const slot = (settings.presaleSlots || []).find((x) => x.id === slotId);
     if (!slot) throw new ApiError('slot-invalid');
     const stats = statsOf(snapData(await getDoc(STATS_REF())));
@@ -537,6 +538,12 @@ export const api = {
       if (over.length) {
         throw new ApiError('presale-limit', `超過預購數量上限：${over.map((x) => `${x.item.name}(剩 ${x.left} 份)`).join('、')}`);
       }
+      // 選項數量上限：預購單在標示付款時扣除(和現場共用同一個上限)
+      const shortC = choiceProblems(o.items, itemsById);
+      if (shortC.length) throw new ApiError('sold-out', `選項數量不足：${shortC.join('、')}`);
+      for (const [id, patch] of Object.entries(stockPatches([], o.items, itemsById, { countItems: false }))) {
+        tx.update(ref('items', id), { ...patch, updatedAt: serverTimestamp() });
+      }
       const priced = priceLines(o.items, itemsById);
       const sold = { ...stats.sold };
       for (const l of o.items) sold[l.itemId] = (sold[l.itemId] || 0) + l.qty;
@@ -560,8 +567,14 @@ export const api = {
       const o = snap.data();
       if (o.type !== 'presale' || o.status !== 'accepted' || !o.paid) throw new ApiError('bad-state');
       const stats = statsOf(snapData(await tx.get(STATS_REF())));
+      const paidLines = o.lines?.length ? o.lines : o.items;
+      // 加回選項已售數量
+      const itemsById = await readItems(tx, paidLines);
+      for (const [id, patch] of Object.entries(stockPatches(paidLines, [], itemsById, { countItems: false }))) {
+        tx.update(ref('items', id), { ...patch, updatedAt: serverTimestamp() });
+      }
       const sold = { ...stats.sold };
-      for (const l of (o.lines?.length ? o.lines : o.items)) sold[l.itemId] = Math.max(0, (sold[l.itemId] || 0) - l.qty);
+      for (const l of paidLines) sold[l.itemId] = Math.max(0, (sold[l.itemId] || 0) - l.qty);
       const slots = { ...stats.slots, [o.slotId]: Math.max(0, (stats.slots[o.slotId] || 0) - 1) };
       tx.set(STATS_REF(), { slots, sold, updatedAt: serverTimestamp() });
       tx.update(oRef, {
@@ -804,17 +817,10 @@ export const api = {
         toPending.itemCount = countItems(o.lines);
       }
       if (o.status === 'accepted') {
-        // 加回庫存
+        // 加回庫存與選項已售數量
         const itemsById = await readItems(tx, o.lines || []);
-        const need = {};
-        for (const l of o.lines || []) need[l.itemId] = (need[l.itemId] || 0) + l.qty;
-        for (const [id, qty] of Object.entries(need)) {
-          const item = itemsById[id];
-          if (!item) continue;
-          const soldCount = Math.max(0, (item.soldCount || 0) - qty);
-          const patch = { soldCount, updatedAt: serverTimestamp() };
-          if (item.stockLimit != null && soldCount < item.stockLimit) patch.soldOut = false;
-          tx.update(ref('items', id), patch);
+        for (const [id, patch] of Object.entries(stockPatches(o.lines || [], [], itemsById))) {
+          tx.update(ref('items', id), { ...patch, updatedAt: serverTimestamp() });
         }
         tx.update(oRef, toPending);
         return;
@@ -860,8 +866,8 @@ export const api = {
       const ids = [...new Set([...o.lines.map((l) => l.itemId), ...actions.map((a) => a.replace?.itemId).filter(Boolean)])];
       const itemsById = await readItems(tx, ids.map((itemId) => ({ itemId })));
       const res = applyLineChanges(o.lines, itemsById, actions);
-      for (const [id, delta] of Object.entries(res.stock)) {
-        if (delta && itemsById[id]) tx.update(ref('items', id), { soldCount: Math.max(0, (itemsById[id].soldCount || 0) + delta), updatedAt: serverTimestamp() });
+      for (const [id, patch] of Object.entries(stockPatches(o.lines, res.lines, itemsById))) {
+        tx.update(ref('items', id), { ...patch, updatedAt: serverTimestamp() });
       }
       const patch = {
         lines: res.lines, total: res.total, itemCount: res.itemCount, totalChanged: true, updatedAt: serverTimestamp(),
@@ -883,6 +889,49 @@ export const api = {
     });
     if (result.cancelled) await releasePhone(orderId);
     return result;
+  }),
+
+  // 攤位修改顧客訂單(改選項、增減數量、刪除或新增品項)：newLines = [{ itemId, sel, qty }]
+  // 已接單或已付款的單：重新計價並同步庫存、選項已售數量、預購統計；已付款的單記住原本收的金額(paidTotal)
+  // 修改後顧客端會顯示提醒(editedAt)，有開推播時另外由攤位頁發送推播
+  editOrder: (orderId, newLines) => guard(async () => {
+    const oRef = ref('orders', orderId);
+    return runTransaction(db, async (tx) => {
+      const snap = await tx.get(oRef);
+      if (!snap.exists()) throw new ApiError('not-found');
+      const o = snap.data();
+      if (!canEditOrder(o)) throw new ApiError('bad-state');
+      const paidPresale = o.type === 'presale' && o.paid;
+      const statsSnap = paidPresale ? await tx.get(STATS_REF()) : null;
+      const oldLines = o.lines?.length ? o.lines : (o.items || []);
+      const itemsById = await readItems(tx, [...oldLines, ...newLines]);
+      const items = cleanLines(newLines.filter((l) => l.qty > 0), itemsById).filter((l) => itemsById[l.itemId]);
+      if (!items.length) throw new ApiError('invalid', '訂單至少要有一個品項。要取消整張訂單，請用「拒絕」或「缺貨處理 → 刪除整張訂單」。');
+      const priced = priceLines(items, itemsById);
+      const locked = !!o.lines?.length; // 已接單或已付款：價格鎖定在 lines
+      const patch = { items, itemCount: countItems(items), totalChanged: true, editedAt: Date.now(), updatedAt: serverTimestamp() };
+      if (locked) Object.assign(patch, { lines: priced.lines, total: priced.total });
+      // A、B 單已扣庫存：依增減調整；已付款的預購單：調整選項已售數量與預購統計
+      if (locked && o.type !== 'presale') {
+        for (const [id, p] of Object.entries(stockPatches(o.lines, priced.lines, itemsById))) {
+          tx.update(ref('items', id), { ...p, updatedAt: serverTimestamp() });
+        }
+      }
+      if (paidPresale) {
+        for (const [id, p] of Object.entries(stockPatches(o.lines, priced.lines, itemsById, { countItems: false }))) {
+          tx.update(ref('items', id), { ...p, updatedAt: serverTimestamp() });
+        }
+        const stats = statsOf(snapData(statsSnap));
+        const sold = { ...stats.sold };
+        for (const l of o.lines) sold[l.itemId] = Math.max(0, (sold[l.itemId] || 0) - l.qty);
+        for (const l of priced.lines) sold[l.itemId] = (sold[l.itemId] || 0) + l.qty;
+        tx.set(STATS_REF(), { slots: stats.slots, sold, updatedAt: serverTimestamp() });
+      }
+      // 已收過錢的單(B 單、已付款的 C 單)：記住原本收的金額，卡片顯示需補收或退還的差額
+      if (locked && (o.type === 'walkin' || paidPresale)) patch.paidTotal = o.paidTotal ?? o.total ?? 0;
+      tx.update(oRef, patch);
+      return { total: locked ? priced.total : null, pushEnabled: !!o.pushEnabled };
+    });
   }),
 
   // 請顧客選擇替代品：requests = [{ key, index, itemId, sel, qty, candidates: [{ itemId, sel }] }]
@@ -911,10 +960,9 @@ export const api = {
       if (!['accepted', 'ready'].includes(o.status)) throw new ApiError('bad-state');
       const lines = o.lines || [];
       const itemsById = await readItems(tx, lines);
-      const back = {};
-      for (const l of lines) back[l.itemId] = (back[l.itemId] || 0) + l.qty;
-      for (const [id, qty] of Object.entries(back)) {
-        if (itemsById[id]) tx.update(ref('items', id), { soldCount: Math.max(0, (itemsById[id].soldCount || 0) - qty), updatedAt: serverTimestamp() });
+      // 預購單的品項數量記在預購統計，這裡只加回選項；其他訂單加回庫存與選項
+      for (const [id, patch] of Object.entries(stockPatches(lines, [], itemsById, { countItems: o.type !== 'presale' }))) {
+        tx.update(ref('items', id), { ...patch, updatedAt: serverTimestamp() });
       }
       tx.update(oRef, {
         status: 'cancelled', cancelledBy: 'stall', cancelReason: reason || '', cancelReasonTr: reasonTr || '',
@@ -1036,8 +1084,11 @@ export const api = {
   }),
 
   // 平台模式：off 關閉 / presale 預購 / open 點餐(攤位主管以上)
+  // 手動切換平台模式；同時清除定時開放預購的設定(手動切換為準)
   setOrderMode: (mode) => guard(async () => {
-    await updateDoc(ref('settings', 'app'), { orderMode: mode, acceptingPreorders: mode === 'open', updatedAt: serverTimestamp() });
+    await updateDoc(ref('settings', 'app'), {
+      orderMode: mode, acceptingPreorders: mode === 'open', presaleStartAt: null, presaleEndAt: null, updatedAt: serverTimestamp(),
+    });
   }),
 
   // ===== 攤位主管 =====
@@ -1247,7 +1298,8 @@ export const api = {
     for (let i = 0; i < snap.docs.length; i += 400) {
       const batch = writeBatch(db);
       snap.docs.slice(i, i + 400).forEach((d) => {
-        const patch = { soldCount: 0, updatedAt: serverTimestamp() };
+        // 選項已售數量一併歸零
+        const patch = { soldCount: 0, choiceSold: {}, updatedAt: serverTimestamp() };
         if (d.data().stockLimit != null) patch.soldOut = false;
         batch.update(d.ref, patch);
       });

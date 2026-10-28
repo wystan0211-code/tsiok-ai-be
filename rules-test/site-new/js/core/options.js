@@ -1,7 +1,8 @@
 // 品項選項群組(仿 Uber Eats)：前台、攤位、後台、展示模式後端共用
 //
 // 資料格式(存在品項文件 item.optionGroups)：
-//   [{ id, name, kind, min, max, choices: [{ id, name, price, soldOut }] }]
+//   [{ id, name, kind, min, max, choices: [{ id, name, price, soldOut, limit }] }]
+//   limit：選項的數量上限(整天總數，接單時扣除；null 為不限制)，已售數量存在 item.choiceSold['群組ID:選項ID']
 //   kind：'required-single' 必填單選 / 'optional-multi' 非必填複選 / 'required-multi' 必填複選
 // 翻譯：item.i18n[語言].groups = { 群組ID: { name, choices: { 選項ID: 名稱 } } }
 // 顧客的選擇(購物車與訂單)：sel = ['群組ID:選項ID', ...]
@@ -20,10 +21,29 @@ export const LEGACY_GROUP_ID = 'g0';
 // 舊格式群組的名稱(與 i18n 的 order.optionLegend 相同)
 const LEGACY_GROUP_NAME = { 'zh-Hant': '口味 / 選項', en: 'Flavor / option', ja: '味・オプション' };
 
+// 選項已售數量與剩餘數量(沒有上限時 left 為 null)
+export function choiceSoldOf(item, groupId, choiceId) {
+  return Number(item?.choiceSold?.[`${groupId}:${choiceId}`]) || 0;
+}
+
 // 取得品項的選項群組(已整理成新格式)
-export function optionGroups(item) {
+// 一般情況：達到數量上限的選項自動視為售完(soldOut)，並附上剩餘數量 left
+// raw：後台編輯用，保留原本手動設定的售完狀態
+export function optionGroups(item, { raw = false } = {}) {
   if (!item) return [];
-  if (Array.isArray(item.optionGroups)) return item.optionGroups.filter((g) => g && g.choices?.length);
+  if (Array.isArray(item.optionGroups)) {
+    const groups = item.optionGroups.filter((g) => g && g.choices?.length);
+    if (raw) return groups;
+    return groups.map((g) => ({
+      ...g,
+      choices: g.choices.map((c) => {
+        const limit = Number(c.limit) || 0;
+        if (!limit) return c;
+        const left = Math.max(0, limit - choiceSoldOf(item, g.id, c.id));
+        return { ...c, left, soldOut: !!c.soldOut || left === 0 };
+      }),
+    }));
+  }
   if (Array.isArray(item.options) && item.options.length) {
     return [{
       id: LEGACY_GROUP_ID,

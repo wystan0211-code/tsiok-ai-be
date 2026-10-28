@@ -11,7 +11,7 @@ import {
 } from '../core/format.js';
 import {
   displayLines, isPaid, lineLabel, summarizeLines, isFinal, isExpired, normalizePhone, isValidPhone,
-  isPresaleVoid, orderMode, PRESALE_PAY_HOURS, PRESALE_MAX_PAY_HOURS,
+  isPresaleVoid, orderMode, baseOrderMode, presaleSchedule, PRESALE_PAY_HOURS, PRESALE_MAX_PAY_HOURS,
 } from '../core/order-logic.js';
 import { compressImage } from '../core/image.js';
 import { cropItemImage, cropBannerImage } from '../core/cropper.js';
@@ -635,8 +635,14 @@ function fillSettings() {
   f.bannerText.value = settings.bannerText || '';
   f.presaleBannerActive.checked = !!settings.presaleBannerActive;
   f.presaleBannerText.value = settings.presaleBannerText || '';
-  const om = f.querySelector(`[name=orderMode][value="${orderMode(settings)}"]`);
+  const om = f.querySelector(`[name=orderMode][value="${baseOrderMode(settings)}"]`);
   if (om) om.checked = true;
+  // 定時開放預購(毫秒 → 本機時間的 datetime-local 字串)
+  const { start, end } = presaleSchedule(settings);
+  f.presaleStartAt.value = start ? toLocalInput(start) : '';
+  f.presaleEndAt.value = end ? toLocalInput(end) : '';
+  const eff = orderMode(settings);
+  $('#schedule-note').textContent = `開始時間到了自動切換為「預購」，結束時間到了自動切換為「關閉」。在營運頁手動切換模式時，會清除這兩個時間。${start || end ? `目前實際模式：${MODE_NAME[eff]}。` : ''}`;
   f.presaleTeacher.value = settings.presaleTeacher || '';
   f.presalePayHours.value = Number(settings.presalePayHours) || PRESALE_PAY_HOURS;
   f.presaleMaxItems.value = settings.presaleMaxItems || '';
@@ -728,6 +734,8 @@ $('#settings-form').addEventListener('submit', (e) => {
       presaleMaxItems: f.presaleMaxItems.value.trim() === '' ? null : Math.max(1, Math.round(Number(f.presaleMaxItems.value))),
       presaleStudentMaxItems: f.presaleStudentMaxItems.value.trim() === '' ? null : Math.max(1, Math.round(Number(f.presaleStudentMaxItems.value))),
       presaleClasses: classesForSave(),
+      presaleStartAt: f.presaleStartAt.value ? new Date(f.presaleStartAt.value).getTime() : null,
+      presaleEndAt: f.presaleEndAt.value ? new Date(f.presaleEndAt.value).getTime() : null,
       presaleConsentText: f.presaleConsentText.value.trim(),
       presaleSlots: slotsForSave(),
       showStockLeft: f.showStockLeft.checked,
@@ -744,6 +752,10 @@ $('#settings-form').addEventListener('submit', (e) => {
       guideType: f.elements.guideType.value || '',
       guideMapUrl: '',
     };
+    if (patch.presaleStartAt && patch.presaleEndAt && patch.presaleEndAt <= patch.presaleStartAt) {
+      toast('預購結束時間要晚於開始時間', 'danger', 5000);
+      return;
+    }
     if (patch.privacyUrl && !/^https:\/\/\S+$/i.test(patch.privacyUrl)) {
       toast('隱私權政策網址必須是 https:// 開頭', 'danger', 5000);
       f.privacyUrl.focus();
@@ -814,6 +826,14 @@ $('#slot-editor').addEventListener('click', (e) => {
   renderSlotEditor();
   $('#settings-form').dataset.dirty = '1';
 });
+const MODE_NAME = { off: '關閉', presale: '預購', open: '點餐' };
+// 毫秒時間戳 → datetime-local 欄位用的本機時間字串
+function toLocalInput(ms) {
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 // ===== 學生可選的班級：一列一個名稱(不翻譯) =====
 let classDraft = [];
 function renderClassEditor() {

@@ -426,6 +426,10 @@ function handlePush_(caller, req) {
   if (req.kind === 'ready') {
     title = tx.readyTitle;
     body = tx.readyBody.replace('{no}', order.no);
+  } else if (req.kind === 'edited') {
+    // 攤位修改了訂單內容(只通知，顧客不用回覆)
+    title = tx.editTitle;
+    body = tx.editBody.replace('{no}', order.no);
   } else if (req.kind === 'rejected') {
     title = tx.rejectTitle;
     body = tx.rejectBody.replace('{no}', order.no).replace('{reason}', req.text ? tx.reasonWrap.replace('{r}', req.text) : '');
@@ -462,16 +466,19 @@ var PUSH_TEXT = {
     readyTitle: '餐點完成了', readyBody: '訂單 {no} 可以取餐了，請到攤位出示編號。',
     rejectTitle: '訂單未成立', rejectBody: '訂單 {no} 未被接受{reason}。歡迎直接到攤位點餐。', reasonWrap: '：{r}',
     messageTitle: '攤位訊息',
+    editTitle: '訂單內容已修改', editBody: '你的訂單 {no} 內容已由攤位修改，請查看最新明細。',
   },
   en: {
     readyTitle: 'Your order is ready', readyBody: 'Order {no} is ready. Please show your order number at the stall.',
     rejectTitle: 'Order not accepted', rejectBody: 'Order {no} was not accepted{reason}. You\'re welcome to order at the stall.', reasonWrap: ': {r}',
     messageTitle: 'Message from the stall',
+    editTitle: 'Your order was updated', editBody: 'The stall has updated order {no}. Please check the latest details.',
   },
   ja: {
     readyTitle: '料理ができました', readyBody: '注文 {no} をお受け取りいただけます。屋台で注文番号を提示してください。',
     rejectTitle: 'ご注文をお受けできませんでした', rejectBody: '注文 {no} はお受けできませんでした{reason}。屋台で直接ご注文いただけます。', reasonWrap: '（理由：{r}）',
     messageTitle: '屋台からのメッセージ',
+    editTitle: 'ご注文内容が変更されました', editBody: '注文 {no} の内容が屋台により変更されました。最新の明細をご確認ください。',
   },
 };
 

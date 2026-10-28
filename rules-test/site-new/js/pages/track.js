@@ -77,6 +77,23 @@ $('#ready-ack').addEventListener('click', () => {
   renderReady();
 });
 
+// ===== 攤位修改了訂單內容：提醒列(按「我知道了」後隱藏，記住在這台裝置；攤位再次修改時重新顯示) =====
+const editAckKey = (o) => `tab-edit-ack-${o.id}-${o.editedAt || 0}`;
+function renderEdited() {
+  const box = $('#o-edited');
+  const edited = !!order.editedAt;
+  $('#o-edited-tag').hidden = !edited;
+  const show = edited && !isFinal(order) && !store.get(editAckKey(order), false);
+  box.hidden = !show;
+  if (!show) return;
+  box.innerHTML = `${icon('edit')}<div><p><strong>${escapeHtml(t('track.editedTitle'))}</strong></p><p>${escapeHtml(t('track.editedBody'))}</p></div>
+    <button type="button" class="btn btn--sm" data-edit-ack>${escapeHtml(t('common.gotIt'))}</button>`;
+  box.querySelector('[data-edit-ack]').addEventListener('click', () => {
+    store.set(editAckKey(order), true);
+    renderEdited();
+  });
+}
+
 // ===== 螢幕常亮：等待取餐期間不讓螢幕變暗(切換分頁或 App 會自動解除，回來時重新請求) =====
 let wakeLock = null;
 async function updateWakeLock() {
@@ -450,6 +467,7 @@ function renderOrder() {
   } else alertBox.innerHTML = '';
 
   renderShortage();
+  renderEdited();
   renderNotify();
   renderGuide();
   renderReady();
@@ -511,6 +529,12 @@ function notifyChanges() {
       beep(1);
       toast(t('track.rejTitle'), 'danger');
     }
+  }
+  // 攤位修改了訂單內容：響提示音、震動，頁面在背景時顯示系統通知
+  if (order.editedAt && order.editedAt !== prevOrder.editedAt) {
+    beep(2);
+    vibrate();
+    showLocalNotification(t('track.editedTitle'), t('track.editedBody'));
   }
   // 攤位詢問替代品項：響鈴約 10 秒(比取餐通知短)
   if (order.shortage && order.shortage.id !== prevOrder.shortage?.id) {

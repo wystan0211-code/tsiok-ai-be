@@ -19,6 +19,8 @@ export const DEFAULT_SETTINGS = {
   presaleMaxItems: null,             // 每張預購單最多幾件(空白為不限制)
   presaleStudentMaxItems: null,      // 學生身分的預購單最多幾件(空白時沿用 presaleMaxItems)
   presaleClasses: [],                // 學生預購可選的班級名稱(不翻譯)
+  presaleStartAt: null,              // 定時開放預購：開始時間(毫秒)，到了自動變成「預購」
+  presaleEndAt: null,                // 定時開放預購：結束時間(毫秒)，到了自動變成「關閉」；空白為不限制
   presaleSlots: [],                  // 取餐時段 [{ id, date, start, end, cap }]
   presaleBannerText: '',             // 預購模式的跑馬燈
   presaleBannerActive: false,

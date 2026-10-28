@@ -90,8 +90,10 @@ service cloud.firestore {
     match /items/{itemId} {
       allow read: if true;
       allow create, delete: if isManager();
+      // 店員：接單、結帳、修改訂單時更新已售數量與選項已售數量；預購主管：標示付款時更新選項已售數量
       allow update: if isManager()
-        || (isStaff() && onlyChanged(['soldCount', 'soldOut', 'updatedAt']));
+        || (isStaff() && onlyChanged(['soldCount', 'soldOut', 'choiceSold', 'updatedAt']))
+        || (isPresaleMgr() && onlyChanged(['choiceSold', 'updatedAt']));
     }
 
     // 品項照片：{照片ID}_s 小圖、{照片ID}_l 大圖(舊資料為 {品項ID})
@@ -164,6 +166,19 @@ service cloud.firestore {
       );
     }
 
+    // ===== 平台模式(考慮定時開放預購)：與 js/core/order-logic.js 的 orderMode() 相同 =====
+    // presaleStartAt / presaleEndAt 為毫秒；到了開始時間 → 預購，到了結束時間 → 關閉，之前維持手動設定的模式
+    function effMode(s) {
+      let base = s.get('orderMode', s.get('acceptingPreorders', false) == true ? 'open' : 'off');
+      let start = s.get('presaleStartAt', null);
+      let end = s.get('presaleEndAt', null);
+      let now = request.time.toMillis();
+      let hasStart = start is int && start > 0;
+      return (end is int && end > 0 && now >= end && (hasStart || base == 'presale')) ? 'off'
+        : ((hasStart && now >= start) ? 'presale' : base);
+    }
+    function presaleOpen(s) { return effMode(s) == 'presale'; }
+
     // ===== 訂單 =====
     function preorderChecks(orderId) {
       let d = request.resource.data;
@@ -179,7 +194,7 @@ service cloud.firestore {
         && d.surname is string && d.surname.size() >= 1 && d.surname.size() <= 10
         && d.title in ['先生', '小姐', '其他']
         && linesOk(d.items) && d.itemCount == sumQty(d.items) && d.itemCount >= 1
-        && settings.acceptingPreorders == true
+        && effMode(settings) == 'open'
         && d.itemCount <= settings.maxItemsPerOrder
         && d.createdAt == request.time && d.updatedAt == request.time
         && d.seq is int && c.value == d.seq && c.lastOrderId == orderId
@@ -202,7 +217,6 @@ service cloud.firestore {
         && d.slotId is string && d.slotId.size() >= 1 && d.slotId.size() <= 40
         && d.payHours == (payHours == null ? 12 : payHours)
         && linesOk(d.items) && d.itemCount == sumQty(d.items) && d.itemCount >= 1
-        && settings.get('orderMode', '') == 'presale'
         && (limit == null || limit == 0 || d.itemCount <= limit)
         && d.createdAt == request.time && d.updatedAt == request.time;
     }
@@ -217,6 +231,7 @@ service cloud.firestore {
                                'lang', 'pushEnabled', 'slotId', 'payHours', 'paid', 'createdAt', 'updatedAt'])
         && d.uid == uid()
         && d.get('lang', 'zh-Hant') in ['zh-Hant', 'en', 'ja']
+        && presaleOpen(settings)
         && presaleBaseOk(d, settings)
         && d.seq is int && c.value == d.seq && c.lastOrderId == orderId
         && d.no == fmtNo('C', d.seq)
@@ -272,6 +287,14 @@ service cloud.firestore {
               && d.payFrom == request.time && d.payHours is int && d.payHours >= 1 && d.payHours <= 48))
         && (isPresaleMgr() || (o.get('onsite', false) == true && isManager()));
     }
+    // 攤位修改未付款預購單的內容(只能改明細，不能改狀態或付款)
+    function staffEditUnpaidPresaleOk() {
+      let o = resource.data;
+      return o.get('type', '') == 'presale' && o.get('paid', false) == false && o.status == 'pending'
+        && request.resource.data.updatedAt == request.time
+        && onlyChanged(['items', 'itemCount', 'totalChanged', 'editedAt', 'updatedAt'])
+        && isStaff();
+    }
     function customerUpdateOk() {
       let d = request.resource.data;
       let o = resource.data;
@@ -303,7 +326,7 @@ service cloud.firestore {
         || (request.resource.data.type == 'presale' && request.resource.data.get('onsite', false) == true && presaleOnsiteChecks(orderId))
         || (request.resource.data.type == 'manual' && isAdmin())
       );
-      allow update: if isAdmin() || presaleMgrUpdateOk() || staffUpdateOk() || customerUpdateOk();
+      allow update: if isAdmin() || presaleMgrUpdateOk() || staffUpdateOk() || staffEditUnpaidPresaleOk() || customerUpdateOk();
       allow delete: if isAdmin();
     }
 
@@ -354,7 +377,7 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if request.resource.data.keys().hasOnly(['slots', 'sold', 'updatedAt'])
         && request.resource.data.slots is map && request.resource.data.sold is map
-        && (isPresaleMgr() || isManager());
+        && (isPresaleMgr() || isStaff());
       allow delete: if isAdmin();
     }
 

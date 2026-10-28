@@ -85,6 +85,9 @@
 
       <div id="o-alert"></div>
 
+      <!-- 攤位修改了訂單內容(只通知，顧客不用回覆)：按「我知道了」後隱藏 -->
+      <div id="o-edited" class="banner edited-bar" role="status" hidden></div>
+
       <!-- 攤位詢問替代品項(已接單後部分品項售完) -->
       <section id="o-short" class="card stack short-ask" hidden></section>
 
@@ -106,7 +109,7 @@
       </section>
 
       <section class="card stack">
-        <h2 class="section-title" data-i18n="track.detailsTitle">訂單明細</h2>
+        <h2 class="section-title row"><span data-i18n="track.detailsTitle">訂單明細</span><span id="o-edited-tag" class="badge badge--warning" data-i18n="track.editedTag" hidden>已修改</span></h2>
         <div id="o-lines"></div>
         <div class="summary-row summary-row--total"><span data-i18n="order.total">總金額</span><span id="o-total"></span></div>
         <!-- 預購：取餐時間與付款期限(在訂單明細下方，靠左、字小一號、灰色) -->

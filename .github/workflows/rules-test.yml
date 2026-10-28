@@ -42,6 +42,9 @@ jobs:
       - run: npx firebase emulators:exec --only firestore --project demo-tsiok "node screens.mjs" | tee screens.txt
       - if: always()
         run: grep '^\[' screens.txt | tr '\n' ' ' | sed 's/^/::notice title=screens::/' || true
+      - run: npx firebase emulators:exec --only firestore --project demo-tsiok "node be28.mjs" | tee be28.txt
+      - if: always()
+        run: grep '^\[' be28.txt | tr '\n' ' ' | sed 's/^/::notice title=be28::/' || true
       - run: npx firebase emulators:exec --only firestore --project demo-tsiok "node presale.mjs" | tee presale.txt
       - if: always()
         run: grep '^\[' presale.txt | tr '\n' ' ' | sed 's/^/::notice title=presale::/' || true

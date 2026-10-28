@@ -19,13 +19,17 @@ function splitNames(value) {
 
 // ===== 由品項建立可編輯的狀態(含翻譯) =====
 export function groupsFromItem(item) {
-  return optionGroups(item).map((g) => ({
+  // raw：保留手動設定的售完狀態(達到數量上限的自動售完不寫回資料庫)
+  return optionGroups(item, { raw: true }).map((g) => ({
     id: g.id,
     name: g.name,
     kind: g.kind,
     min: groupRule(g).min,
     max: groupRule(g).max,
-    choices: g.choices.map((c) => ({ id: c.id, name: c.name, price: Number(c.price) || 0, soldOut: !!c.soldOut })),
+    choices: g.choices.map((c) => ({
+      id: c.id, name: c.name, price: Number(c.price) || 0, soldOut: !!c.soldOut,
+      limit: Number(c.limit) || null, sold: Number(item?.choiceSold?.[`${g.id}:${c.id}`]) || 0,
+    })),
     // 只保留真正有翻譯的文字；沒有翻譯(與中文相同)時留空，儲存時自動翻譯
     tr: Object.fromEntries(LANGS.map(([lang]) => {
       const gName = groupName(item, g, lang);
@@ -52,7 +56,7 @@ function cloneGroup(g, fresh = false) {
     const cid = fresh ? newId('c') : c.id;
     idMap[c.id] = cid;
     // 複製到其他品項時，售完狀態一律恢復為供應中
-    return { ...c, id: cid, soldOut: fresh ? false : c.soldOut };
+    return { ...c, id: cid, soldOut: fresh ? false : c.soldOut, sold: fresh ? 0 : c.sold };
   });
   const tr = emptyTr();
   for (const [lang] of LANGS) {
@@ -86,6 +90,7 @@ export function groupsForSave(groups) {
   return groups.map((g) => {
     const choices = g.choices.filter((c) => clean(c.name)).map((c) => ({
       id: c.id, name: clean(c.name), price: Math.max(0, Math.round(Number(c.price) || 0)), soldOut: !!c.soldOut,
+      limit: Number(c.limit) >= 1 ? Math.round(Number(c.limit)) : null,
     }));
     const max = g.kind === 'required-single' ? 1 : Math.max(1, Math.min(choices.length, Math.round(g.max) || 1));
     const min = g.kind === 'required-single' ? 1 : (g.kind === 'required-multi' ? Math.max(1, Math.min(max, Math.round(g.min) || 1)) : 0);
@@ -176,6 +181,9 @@ function groupCardHtml(g, gi, total) {
       <label class="og-choice__price"><span class="visually-hidden">加價</span>
         <span class="og-choice__plus" aria-hidden="true">+$</span>
         <input class="input" type="number" inputmode="numeric" min="0" max="9999" step="1" placeholder="0" value="${c.price || ''}" data-og-field="choice-price"></label>
+      <label class="og-choice__limit" title="數量上限(整天總數，接單時扣除；空白為不限制)"><span class="visually-hidden">數量上限</span>
+        <input class="input" type="number" inputmode="numeric" min="1" max="9999" step="1" placeholder="上限" value="${c.limit || ''}" data-og-field="choice-limit">
+        ${c.limit ? `<span class="og-choice__sold">已售 ${c.sold || 0}</span>` : ''}</label>
       <label class="switch og-choice__soldout"><input type="checkbox" data-og-field="choice-soldout" ${c.soldOut ? 'checked' : ''}><span>售完</span></label>
       <div class="og-choice__acts">
         <button type="button" class="btn btn--ghost btn--icon" data-og="choice-up" ${ci === 0 ? 'disabled' : ''} aria-label="上移">${icon('arrow_upward', 'icon--sm')}</button>
@@ -263,6 +271,7 @@ export function mountGroupEditor(dlg, groups, { items, currentId }) {
     if (field === 'name') g.name = e.target.value;
     if (field === 'choice-name') g.choices[ci].name = e.target.value;
     if (field === 'choice-price') g.choices[ci].price = Math.max(0, Math.round(Number(e.target.value) || 0));
+    if (field === 'choice-limit') g.choices[ci].limit = Number(e.target.value) >= 1 ? Math.round(Number(e.target.value)) : null;
     if (field === 'min') g.min = Math.round(Number(e.target.value) || 1);
     if (field === 'max') g.max = Math.round(Number(e.target.value) || 1);
     if (field === 'tr-name') g.tr[e.target.dataset.lang].name = e.target.value;
