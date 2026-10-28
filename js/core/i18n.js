@@ -48,6 +48,7 @@ const DICT = {
   'home.alt': ['九愛！買 Tsiok ài bé。線上先點餐。就是快 Just Grab & Go', '九愛！買 Tsiok ài bé. Just Grab & GO', '九愛！買 Tsiok ài bé。サッと手に取って、そのまま出発'],
   'home.start': ['開始', 'Start', 'はじめる'],
   'home.viewOrder': ['查看訂單進度', 'Track my order', '注文状況を見る'],
+  'home.presaleSoon': ['預購將於 {t} 開放', 'Pre-orders open {t}', '予約注文は {t} から受付開始'],
   'home.closed': ['攤位目前暫停接受預點，請直接到攤位點餐', 'Pre-orders are paused. Please order at the stall.', 'ただいま事前注文を停止しています。屋台で直接ご注文ください。'],
   'home.findOrder': ['找回我的訂單', 'Find my order', '注文を探す'],
 
@@ -141,6 +142,9 @@ const DICT = {
   'track.rejReason': ['原因：{r}', 'Reason: {r}', '理由：{r}'],
   'track.rejHint': ['歡迎直接到攤位點餐。', 'You\'re welcome to order at the stall.', '屋台で直接ご注文いただけます。'],
   'track.cancelled': ['訂單已取消。', 'This order has been cancelled.', 'この注文はキャンセルされました。'],
+  'track.editedTitle': ['攤位已修改你的訂單', 'The stall has updated your order', '屋台がご注文内容を変更しました'],
+  'track.editedBody': ['請查看下方的最新明細，不需要回覆。', 'Please check the latest details below. No reply is needed.', '下の最新の明細をご確認ください。返信は不要です。'],
+  'track.editedTag': ['已修改', 'Updated', '変更あり'],
   'track.voided': ['此訂單已由攤位取消。如有疑問，請到攤位詢問。', 'This order was cancelled by the stall. Please ask at the stall if you have any questions.', 'この注文は屋台によりキャンセルされました。ご不明な点は屋台でお尋ねください。'],
   'track.expired': ['此訂單已超過 12 小時，已自動失效。如有疑問，請到攤位詢問。', 'This order is more than 12 hours old and has expired. Please ask at the stall if you have any questions.', 'この注文は 12 時間以上経過したため無効になりました。ご不明な点は屋台でお尋ねください。'],
   'track.readyStrong': ['餐點已完成！', 'Your order is ready!', '料理ができました！'],
