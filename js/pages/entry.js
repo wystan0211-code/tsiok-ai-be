@@ -3,7 +3,9 @@
 import { api, IS_DEMO } from '../api/index.js';
 import { $, $$, showDemoBanner, withBusy, toast } from '../core/ui.js';
 import { errorText } from '../core/errors.js';
-import { isFinal, orderMode } from '../core/order-logic.js';
+import {
+  isFinal, orderMode, presaleOpensAt, openTimeLabel, armScheduleTimer,
+} from '../core/order-logic.js';
 import { goTo } from '../core/transition.js';
 import { getLang, setLang, onLangChange, t } from '../core/i18n.js';
 import { isLineInApp } from '../core/env.js';
@@ -47,7 +49,14 @@ function render() {
   const label = $('#start-label');
   label.dataset.i18n = mode === 'presale' ? 'home.startPresale' : 'home.start';
   label.textContent = t(label.dataset.i18n);
+  // 關閉中且有設定預購開始時間：顯示「預購將於 10/30(四) 18:00 開放」；沒有設定時維持原本的關閉文字
+  const opensAt = mode === 'off' ? presaleOpensAt(settings) : 0;
+  $('#state-closed').textContent = opensAt
+    ? t('home.presaleSoon', { t: openTimeLabel(opensAt, getLang()) })
+    : t('home.closed');
   show(mode === 'off' ? 'closed' : 'ready');
+  // 到了開始或結束時間時自動重新顯示
+  armScheduleTimer(settings, render);
   preloadDesigns(); // 按鈕出現後才在背景下載其他語言的設計圖，不和登入搶網路
 }
 
@@ -159,7 +168,10 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-onLangChange((lang) => applyDesign(lang));
+onLangChange((lang) => {
+  applyDesign(lang);
+  render();
+});
 applyDesign(getLang(), true);
 
 // ===== 開始點餐 =====

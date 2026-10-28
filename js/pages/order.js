@@ -13,7 +13,7 @@ import {
 import {
   countItems, priceLines, stockIssues, summarizeLines, normalizePhone, isValidPhone,
   orderMode, visibleIn, presaleLeft, presaleIssues, groupSlots, slotDateLabel, slotTime, slotLabel, slotLeft,
-  PRESALE_PAY_HOURS,
+  PRESALE_PAY_HOURS, armScheduleTimer,
 } from '../core/order-logic.js';
 import { goTo, pageReady, briefWait } from '../core/transition.js';
 import {
@@ -1162,11 +1162,16 @@ async function init() {
 }
 
 function startWatchers() {
-  api.watchSettings((s) => {
-    settings = s;
+  const onSettings = () => {
     applyMode();
     saveCart();
     render();
+    // 到了預購開始或結束時間時，自動切換模式
+    armScheduleTimer(settings, onSettings);
+  };
+  api.watchSettings((s) => {
+    settings = s;
+    onSettings();
   });
   api.watchPresaleStats((st) => {
     presaleStats = st;

@@ -14,7 +14,8 @@ import {
   countItems, displayLines, displayTotal, lineLabel, priceLines, stockProblems, summarizeLines,
   normalizePhone, isValidPhone, ACTIVE_STATUSES, createdMs,
   orderMode, isPresale, payDeadline, slotLabel, slotLeft, groupSlots, slotDateLabel, slotTime,
-  PRESALE_PAY_HOURS, PRESALE_MAX_PAY_HOURS, presaleItemLimit,
+  PRESALE_PAY_HOURS, PRESALE_MAX_PAY_HOURS, presaleItemLimit, presaleSchedule, armScheduleTimer,
+  canEditOrder, paidDiff,
 } from '../core/order-logic.js';
 import { chime, startChimeLoop, stopChimeLoop, unlockAudio } from '../core/sound.js';
 import { qrSvg } from '../core/qr.js';
@@ -108,6 +109,9 @@ function cardHtml(o, forceOpen = false) {
     o.status === 'picked' && o.payment && (!singlePayment() || o.payment === CASH) ? `<span class="badge">${escapeHtml(o.payment)}</span>` : '',
     o.shortage ? '<span class="badge badge--warning">等待顧客選擇替代</span>' : '',
     o.totalChanged && ACTIVE_STATUSES.includes(o.status) ? '<span class="badge">已修改明細</span>' : '',
+    // 已收過錢的單修改後：需補收或退還的差額
+    ACTIVE_STATUSES.includes(o.status) && paidDiff(o) > 0 ? `<span class="badge badge--warning">需補收 ${money(paidDiff(o))}</span>` : '',
+    ACTIVE_STATUSES.includes(o.status) && paidDiff(o) < 0 ? `<span class="badge badge--warning">需退還 ${money(-paidDiff(o))}</span>` : '',
     // 預購：付款狀態標籤與取餐時段
     isPresale(o) && ACTIVE_STATUSES.includes(o.status)
       ? (o.paid ? '<span class="badge badge--success">已付款</span>' : '<span class="badge badge--warning">未付款</span>') : '',
@@ -122,11 +126,13 @@ function cardHtml(o, forceOpen = false) {
   } else if (o.status === 'pending') {
     actions = `
       <button class="btn btn--primary" data-act="accept">${icon('check')}接單</button>
-      <button class="btn btn--danger" data-act="reject">${icon('block')}拒絕</button>`;
+      <button class="btn btn--danger" data-act="reject">${icon('block')}拒絕</button>
+      ${editButton(o)}`;
   } else if (o.status === 'accepted') {
     actions = `${qrButton(o)}
       <button class="btn btn--primary order-card__wide" data-act="ready">${icon('notifications_active')}完成，通知取餐</button>
       <button class="btn" data-act="message">${icon('chat')}傳訊息</button>
+      ${editButton(o)}
       ${o.type === 'preorder' ? `<button class="btn" data-act="shortage">${icon('inventory_2')}缺貨處理</button>` : ''}
       <button class="btn btn--ghost" data-act="picked">${icon('done_all')}已取餐</button>
       <button class="btn btn--ghost" data-act="revert">${icon('undo')}退回等待接單</button>`;
@@ -137,6 +143,7 @@ function cardHtml(o, forceOpen = false) {
       ${o.type === 'preorder' ? `<button class="btn" data-act="shortage">${icon('inventory_2')}缺貨處理</button>` : ''}
       <button class="btn" data-act="message">${icon('chat')}傳訊息</button>
       <button class="btn" data-act="sms">${icon('sms')}簡訊通知</button>
+      ${editButton(o)}
       <button class="btn btn--ghost" data-act="revert">${icon('undo')}退回製作中</button>`;
   } else if (o.status === 'picked' && hasRole(me, 'admin')) {
     // 已取餐退回可取餐：只有管理員能操作
@@ -190,6 +197,7 @@ function presaleActions(o) {
     return [
       mgr ? `<button class="btn btn--primary" data-act="paid">${icon('payments')}標示已付款</button>` : '',
       staff ? qrButton(o) : '',
+      staff ? editButton(o) : '',
     ].join('');
   }
   if (o.status === 'accepted') {
@@ -197,6 +205,7 @@ function presaleActions(o) {
       staff ? qrButton(o) : '',
       staff ? `<button class="btn btn--primary order-card__wide" data-act="ready">${icon('notifications_active')}完成，通知取餐</button>` : '',
       staff ? `<button class="btn" data-act="message">${icon('chat')}傳訊息</button>` : '',
+      staff ? editButton(o) : '',
       staff ? `<button class="btn btn--ghost" data-act="picked">${icon('done_all')}已取餐</button>` : '',
       mgr ? `<button class="btn btn--ghost" data-act="unpaid">${icon('undo')}退回未付款</button>` : '',
     ].join('');
@@ -206,6 +215,7 @@ function presaleActions(o) {
     return `<button class="btn btn--primary btn--lg btn--block order-card__pick" data-act="picked">${icon('done_all')}已取餐</button>
       <button class="btn" data-act="message">${icon('chat')}傳訊息</button>
       <button class="btn" data-act="sms">${icon('sms')}簡訊通知</button>
+      ${editButton(o)}
       <button class="btn btn--ghost" data-act="revert">${icon('undo')}退回已接單</button>`;
   }
   if (o.status === 'picked' && hasRole(me, 'admin')) {
@@ -296,6 +306,94 @@ async function doUnpaid(o) {
     toast(`${o.no} 已退回未付款，付款期限 ${hours} 小時`);
   } catch (err) {
     toast(errorText(err), 'danger');
+  }
+}
+
+// ===== 攤位修改顧客訂單：改選項、增減數量、刪除或新增品項(選項由攤位直接決定)；存檔後通知顧客 =====
+function editButton(o) {
+  return !presaleOnly(me) && canEditOrder(o) ? `<button class="btn" data-act="edit">${icon('edit')}編輯訂單</button>` : '';
+}
+
+async function doEdit(o) {
+  const map = itemsById();
+  const before = (o.lines?.length ? o.lines : (o.items || []));
+  const oldTotal = o.lines?.length ? o.total : null;
+  const draft = before.map((l) => ({ itemId: l.itemId, sel: normalizeSel(map[l.itemId], l), qty: l.qty }));
+  const addable = menu.filter((it) => it.active !== false);
+  const paint = (dlg) => {
+    dlg.querySelector('[data-edit-lines]').innerHTML = draft.map((l, i) => {
+      const item = map[l.itemId];
+      const opt = item ? selText(item, l.sel) : '';
+      const gone = l.qty <= 0;
+      return `<div class="edit-line ${gone ? 'is-removed' : ''}">
+        <div class="edit-line__name">${lineWithNote(item?.name || '已刪除的品項', opt)}</div>
+        <div class="edit-line__acts">
+          ${item && hasOptions(item) && !gone ? `<button type="button" class="btn btn--sm" data-edit-opt="${i}">改選項</button>` : ''}
+          ${gone ? `<button type="button" class="btn btn--sm" data-edit-undo="${i}">復原</button>` : `
+          <div class="stepper">
+            <button type="button" data-edit-i="${i}" data-d="-1" aria-label="減少">${icon(l.qty === 1 ? 'delete' : 'remove', 'icon--sm')}</button>
+            <span class="stepper__value">${l.qty}</span>
+            <button type="button" data-edit-i="${i}" data-d="1" aria-label="增加">${icon('add', 'icon--sm')}</button>
+          </div>`}
+        </div>
+      </div>`;
+    }).join('');
+    const kept = draft.filter((l) => l.qty > 0 && map[l.itemId]);
+    const total = priceLines(kept, map).total;
+    const diff = oldTotal != null ? total - oldTotal : 0;
+    dlg.querySelector('[data-edit-total]').textContent = `修改後合計 ${money(total)}${diff ? `(${diff > 0 ? '多' : '少'} ${money(Math.abs(diff))})` : ''}・${countItems(kept)} 件`;
+  };
+  const { value } = await openDialog({
+    title: `編輯訂單 ${o.no}`,
+    size: 'wide',
+    body: `<div class="edit-lines" data-edit-lines></div>
+      <div class="row edit-add">
+        <select class="select" data-edit-add aria-label="要新增的品項">${addable.map((it) => `<option value="${it.id}">${escapeHtml(it.name)}</option>`).join('')}</select>
+        <button type="button" class="btn" data-edit-add-btn>${icon('add')}新增品項</button>
+      </div>
+      <p class="text-sm" data-edit-total></p>
+      <p class="muted text-sm">儲存後顧客的追蹤頁會跳出提醒並響提示音(有開推播時也會收到通知)，顧客不用回覆。</p>`,
+    actions: [{ label: '儲存並通知顧客', value: 'save' }],
+    onOpen: (dlg) => {
+      paint(dlg);
+      dlg.addEventListener('click', async (e) => {
+        const step = e.target.closest('[data-edit-i]');
+        const optBtn = e.target.closest('[data-edit-opt]');
+        const undo = e.target.closest('[data-edit-undo]');
+        if (step) {
+          const l = draft[Number(step.dataset.editI)];
+          l.qty = Math.max(0, l.qty + Number(step.dataset.d));
+        } else if (undo) {
+          draft[Number(undo.dataset.editUndo)].qty = 1;
+        } else if (optBtn) {
+          const l = draft[Number(optBtn.dataset.editOpt)];
+          const res = await chooseOptions(map[l.itemId], { prev: l.sel, withQty: false, title: `${map[l.itemId].name} 改選項` });
+          if (res) l.sel = res.sel;
+        } else if (e.target.closest('[data-edit-add-btn]')) {
+          const item = map[dlg.querySelector('[data-edit-add]').value];
+          if (!item) return;
+          let sel = [];
+          let qty = 1;
+          if (hasOptions(item)) {
+            const res = await chooseOptions(item, { title: `新增 ${item.name}` });
+            if (!res) return;
+            ({ sel, qty } = res);
+          }
+          const same = draft.find((l) => l.itemId === item.id && selKey(l.sel) === selKey(sel) && l.qty > 0);
+          if (same) same.qty += qty;
+          else draft.push({ itemId: item.id, sel, qty });
+        } else return;
+        paint(dlg);
+      });
+    },
+  });
+  if (value !== 'save') return;
+  try {
+    const res = await api.editOrder(o.id, draft.filter((l) => l.qty > 0));
+    toast(`${o.no} 已修改，已通知顧客`, 'success');
+    if (res?.pushEnabled) api.notifyCustomer(o.id, 'edited').catch(() => {});
+  } catch (err) {
+    toast(errorText(err), 'danger', 6000);
   }
 }
 
@@ -392,7 +490,7 @@ document.addEventListener('click', (e) => {
   const o = card && byId(card.dataset.id);
   if (!o) return;
   const handlers = {
-    accept: doAccept, reject: doReject, ready: doReady, picked: doPicked,
+    accept: doAccept, reject: doReject, ready: doReady, picked: doPicked, edit: doEdit,
     revert: doRevert, message: doMessage, sms: doSms, paid: doPaid, unpaid: doUnpaid,
     shortage: doShortage, 'short-timeout': doShortageTimeout,
     // 訂單卡的「顯示 QR code」：連著顧客顯示頁時，顧客顯示頁也同時浮動顯示
@@ -925,8 +1023,8 @@ function renderPosCart() {
     <label class="radio-chip"><input type="radio" name="payment" value="${escapeHtml(m)}" ${m === pos.payment ? 'checked' : ''}><span>${escapeHtml(m)}</span></label>`).join('');
 }
 
-// ===== 現場預購(C)：平台模式為「預購」時，攤位主管與管理員可以在現場建立預購單 =====
-const posPresaleAllowed = () => !!me && hasRole(me, 'manager') && orderMode(settings) === 'presale';
+// ===== 現場預購(C)：攤位主管與管理員可以在現場建立預購單(不受平台模式限制，顧客端關閉時也可以) =====
+const posPresaleAllowed = () => !!me && hasRole(me, 'manager');
 function renderPosPresale() {
   const f = $('#pos-form');
   if (me && settings) {
@@ -1489,8 +1587,11 @@ $('#mode-switch').addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-order-mode]');
   if (!btn || !hasRole(me, 'manager') || btn.dataset.orderMode === orderMode(settings)) return;
   const mode = btn.dataset.orderMode;
+  // 有定時開放預購的設定：手動切換會清除定時設定，先確認
+  const { start, end } = presaleSchedule(settings);
+  if ((start || end) && !await confirmDialog('清除定時設定', '目前有設定預購時間，手動切換會清除定時設定，確定嗎？', { confirmLabel: '確定切換' })) return;
   const prev = settings;
-  settings = { ...settings, orderMode: mode, acceptingPreorders: mode === 'open' };
+  settings = { ...settings, orderMode: mode, acceptingPreorders: mode === 'open', presaleStartAt: null, presaleEndAt: null };
   renderModeSwitch();
   try {
     await api.setOrderMode(mode);
@@ -1549,9 +1650,15 @@ requireStaff('staff', (p) => {
   selectTab(onlyPresale ? 'board' : store.get('tab-stall-tab', 'board'));
   setMobileCol(mobileCol);
 
+  const onScheduleTick = () => {
+    renderModeSwitch();
+    if (pos.mode === 'presale') renderPosPresale();
+    armScheduleTimer(settings, onScheduleTick);
+  };
   api.watchSettings((s) => {
     settings = s;
     renderModeSwitch();
+    armScheduleTimer(settings, onScheduleTick);
     const hoursInput = $('#presale-tools').hours;
     if (document.activeElement !== hoursInput) hoursInput.value = Number(s.presalePayHours) || PRESALE_PAY_HOURS;
     renderAll();
