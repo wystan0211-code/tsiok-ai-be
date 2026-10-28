@@ -141,6 +141,14 @@
             <label class="radio-chip"><input type="radio" name="orderMode" value="open"><span>點餐</span></label>
           </div>
         </fieldset>
+        <!-- 定時開放預購：開始時間到了自動變成「預購」，結束時間到了自動變成「關閉」 -->
+        <div class="row">
+          <label class="field"><span class="field__label">預購開始時間(空白為不定時)</span>
+            <input class="input" name="presaleStartAt" type="datetime-local"></label>
+          <label class="field"><span class="field__label">預購結束時間(空白為不限制)</span>
+            <input class="input" name="presaleEndAt" type="datetime-local"></label>
+        </div>
+        <p id="schedule-note" class="field__hint">開始時間到了自動切換為「預購」，結束時間到了自動切換為「關閉」。在營運頁手動切換模式時，會清除這兩個時間。</p>
         <label class="field"><span class="field__label">單筆預點數量上限(件)</span>
           <input class="input" name="maxItemsPerOrder" type="number" min="1" max="50" required>
           <span class="field__hint">超過上限的預點會自動拒絕，並通知收件匣</span></label>
