@@ -421,6 +421,16 @@ button,
   color: var(--color-danger);
 }
 
+/* 追蹤頁：攤位修改訂單的提醒列(文字在中間，「我知道了」在右邊) */
+.edited-bar {
+  align-items: center;
+}
+
+.edited-bar > div {
+  flex: 1;
+  min-width: 0;
+}
+
 .empty {
   text-align: center;
   color: var(--color-text-muted);
@@ -1078,6 +1088,49 @@ button,
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+/* 編輯訂單視窗：每一列品項(名稱、備註、改選項、數量) */
+.edit-lines {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.edit-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.edit-line__name {
+  min-width: 0;
+}
+
+.edit-line__acts {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* 數量減到 0：標示將刪除 */
+.edit-line.is-removed .edit-line__name {
+  color: var(--color-text-muted);
+  text-decoration: line-through;
+}
+
+.edit-add {
+  flex-wrap: nowrap;
+  margin-bottom: var(--space-2);
+}
+
+.edit-add .select {
+  flex: 1;
+  min-width: 0;
 }
 
 /* 「完成，通知取餐」：自己佔一整列，左右兩端和下方按鈕對齊 */
@@ -2972,7 +3025,7 @@ body.is-viewer-open {
 /* 選項一列：名稱 | 加價 | 售完 | 排序與刪除 */
 .og-choice {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 96px auto auto;
+  grid-template-columns: minmax(0, 1fr) 96px 88px auto auto;
   align-items: center;
   gap: var(--space-2);
 }
@@ -3005,10 +3058,22 @@ body.is-viewer-open {
   display: flex;
 }
 
+/* 選項數量上限與已售數量 */
+.og-choice__limit {
+  display: grid;
+  gap: 2px;
+}
+
+.og-choice__sold {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
 /* 手機：名稱獨占一列，加價、售完、按鈕在第二列 */
 @media (max-width: 560px) {
   .og-choice {
-    grid-template-columns: 96px auto 1fr;
+    grid-template-columns: 96px 88px auto 1fr;
     padding-bottom: var(--space-2);
     border-bottom: 1px solid var(--color-divider);
   }
