@@ -459,6 +459,25 @@ export const api = {
     commit();
   },
 
+  // 復原逾時作廢的預購單：與正式版相同
+  async restorePresale(orderId, hours) {
+    await delay();
+    const o = getOrder(orderId);
+    requireRole(o.onsite ? [...new Set([...PRESALE_MGR, ...MANAGER])] : PRESALE_MGR);
+    if (!isPresaleVoid(o)) throw new ApiError('bad-state', '這張預購單沒有逾時作廢，不需要復原。');
+    const now = Date.now();
+    Object.assign(o, { payFrom: now, payHours: Math.round(hours), restoredAt: now, updatedAt: now });
+    commit();
+    return { pushEnabled: !!o.pushEnabled };
+  },
+  async presalePhoneConflict(orderId) {
+    const phone = db.contacts[orderId]?.phone;
+    const lock = phone && db.activePhones[phone];
+    if (!lock?.orderId || lock.orderId === orderId) return '';
+    const other = db.orders[lock.orderId];
+    return other && !isFinal(other) ? (other.no || '另一張訂單') : '';
+  },
+
   // ===== 顧客顯示頁：與正式版相同(展示模式只能在同一個瀏覽器的分頁之間同步) =====
   async screenCreate(pin) {
     requireRole(STAFF);
@@ -594,9 +613,11 @@ export const api = {
 
   // ===== 攤位營運 =====
   // 與正式版相同：今天的訂單 + 全部預購單(逾時作廢的不顯示)；presaleOnly 只有預購單
-  watchTodayOrders(cb, { presaleOnly = false } = {}) {
+  watchTodayOrders(cb, { presaleOnly = false, onPresales = null } = {}) {
     const today = startOfDay();
     const from = Math.min(today, Date.now() - ORDER_TTL_MS);
+    // 另外回傳全部預購單(含逾時作廢的)
+    if (onPresales) watch((d) => Object.values(d.orders).filter((o) => isPresale(o) && !o.deleted), onPresales);
     return watch((d) => Object.values(d.orders)
       .filter((o) => {
         if (o.deleted) return false;
@@ -831,7 +852,8 @@ export const api = {
   },
 
   async getContact(orderId) {
-    requireRole(STAFF);
+    // 與正式版相同：預購主管也能讀(正式版只限預購單)
+    requireRole([...STAFF, ...PRESALE_MGR]);
     return db.contacts[orderId] ? structuredClone(db.contacts[orderId]) : null;
   },
 
