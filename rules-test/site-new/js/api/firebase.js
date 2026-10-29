@@ -585,6 +585,38 @@ export const api = {
     });
   }),
 
+  // 復原逾時作廢的預購單：維持請付款，付款期限從現在重新計算 hours 小時(未付款的單沒有占用名額與數量，不用調整)
+  restorePresale: (orderId, hours) => guard(async () => {
+    const oRef = ref('orders', orderId);
+    let out = {};
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(oRef);
+      if (!snap.exists()) throw new ApiError('not-found');
+      const o = snapData(snap);
+      if (!isPresaleVoid(o)) throw new ApiError('bad-state', '這張預購單沒有逾時作廢，不需要復原。');
+      tx.update(oRef, {
+        payFrom: serverTimestamp(), payHours: Math.round(hours), restoredAt: serverTimestamp(), updatedAt: serverTimestamp(),
+      });
+      out = { pushEnabled: !!o.pushEnabled };
+    });
+    return out;
+  }),
+
+  // 復原前檢查：同一支電話是否已有其他進行中的訂單；有的話回傳該訂單編號，沒有或無法檢查時回傳空字串
+  presalePhoneConflict: async (orderId) => {
+    try {
+      const contact = snapData(await getDoc(ref('contacts', orderId)));
+      if (!contact?.phone) return '';
+      const lock = snapData(await getDoc(ref('activePhones', contact.phone)));
+      if (!lock?.orderId || lock.orderId === orderId) return '';
+      const other = snapData(await getDoc(ref('orders', lock.orderId)));
+      return other && !isFinal(other) ? (other.no || '另一張訂單') : '';
+    } catch (err) {
+      console.warn('電話檢查失敗', err);
+      return '';
+    }
+  },
+
   // ===== 顧客顯示頁(screens/{6 位數配對碼}) =====
   // 攤位的現場點餐裝置建立並寫入；顧客顯示頁不用登入，只能讀取與回報「我還在」(seenAt)
   screenCreate: (pin) => guard(async () => {
@@ -735,12 +767,14 @@ export const api = {
   // 今天的訂單，加上 12 小時內建立、跨日但還沒結束的訂單(例如前一晚 23:50 的單)
   // 預購單(C)：送出後到活動當天可能隔好幾天，另外查詢全部預購單；逾時作廢的預設不顯示
   // presaleOnly：預購主管只能查詢預購單
-  watchTodayOrders(cb, { presaleOnly = false } = {}) {
+  // onPresales：另外回傳全部預購單(含逾時作廢的)，攤位頁用來顯示「逾時作廢的預購單」
+  watchTodayOrders(cb, { presaleOnly = false, onPresales = null } = {}) {
     const today = startOfDay();
     const from = Math.min(today, Date.now() - ORDER_TTL_MS);
     let todays = [];
     let presales = [];
     const emit = () => {
+      if (onPresales) onPresales(presales.filter((o) => !o.deleted));
       const map = new Map();
       for (const o of [...todays, ...presales]) map.set(o.id, o);
       const list = [...map.values()].filter((o) => {

@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;600&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,add_photo_alternate,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,cast,cast_connected,cast_pause,cast_warning,chat,check,check_circle,chevron_left,chevron_right,close,content_copy,delete,done_all,download,edit,error,event,expand_more,fullscreen,group,image,inbox,info,inventory_2,language,link_off,login,logout,near_me,notifications,notifications_active,notifications_off,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,save,schedule,search,send,settings,shopping_bag,sms,storefront,swap_horiz,sync,timer,tune,tv,undo,upload,view_kanban,visibility,volume_up,warning,zoom_in,zoom_out&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add,add_photo_alternate,arrow_back_ios_new,arrow_downward,arrow_upward,block,campaign,cancel,cast,cast_connected,cast_pause,cast_warning,chat,check,check_circle,chevron_left,chevron_right,close,content_copy,delete,done_all,download,edit,error,event,expand_more,fullscreen,group,history,image,inbox,info,inventory_2,language,link_off,login,logout,near_me,notifications,notifications_active,notifications_off,payments,person_add,point_of_sale,print,progress_activity,qr_code_2,receipt_long,remove,restart_alt,restaurant,restaurant_menu,restore,save,schedule,search,send,settings,shopping_bag,sms,storefront,swap_horiz,sync,timer,tune,tv,undo,upload,view_kanban,visibility,volume_up,warning,zoom_in,zoom_out&display=block">
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/components.css">
@@ -103,6 +103,18 @@
           <div class="stack" data-list="done"></div>
         </div>
       </div>
+      <!-- 逾時作廢的預購單：預購主管與管理員看全部，攤位主管只看現場建立的；可以復原並重新給付款期限 -->
+      <details id="void-box" class="card void-box" hidden>
+        <summary class="void-box__head">
+          <span class="material-symbols-rounded icon" aria-hidden="true">history</span>
+          <span>逾時作廢的預購單</span>
+          <span id="void-count" class="count-dot">0</span>
+        </summary>
+        <div class="stack void-box__body">
+          <input id="void-q" class="input" type="search" placeholder="搜尋編號或電話後 4 碼" aria-label="搜尋逾時作廢的預購單">
+          <div id="void-list" class="stack"></div>
+        </div>
+      </details>
     </section>
 
     <!-- 現場點餐 -->

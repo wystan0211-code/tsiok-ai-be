@@ -287,6 +287,16 @@ service cloud.firestore {
               && d.payFrom == request.time && d.payHours is int && d.payHours >= 1 && d.payHours <= 48))
         && (isPresaleMgr() || (o.get('onsite', false) == true && isManager()));
     }
+    // 復原逾時作廢的預購單：維持請付款，付款期限從現在重新計算(與標示已付款的權限相同)
+    function presaleRestoreOk() {
+      let d = request.resource.data;
+      let o = resource.data;
+      return presaleVoid(o) && o.get('paid', false) == false
+        && onlyChanged(['payFrom', 'payHours', 'restoredAt', 'updatedAt'])
+        && d.payFrom == request.time && d.restoredAt == request.time && d.updatedAt == request.time
+        && d.payHours is int && d.payHours >= 1 && d.payHours <= 48
+        && (isPresaleMgr() || (o.get('onsite', false) == true && isManager()));
+    }
     // 攤位修改未付款預購單的內容(只能改明細，不能改狀態或付款)
     function staffEditUnpaidPresaleOk() {
       let o = resource.data;
@@ -326,7 +336,7 @@ service cloud.firestore {
         || (request.resource.data.type == 'presale' && request.resource.data.get('onsite', false) == true && presaleOnsiteChecks(orderId))
         || (request.resource.data.type == 'manual' && isAdmin())
       );
-      allow update: if isAdmin() || presaleMgrUpdateOk() || staffUpdateOk() || staffEditUnpaidPresaleOk() || customerUpdateOk();
+      allow update: if isAdmin() || presaleMgrUpdateOk() || presaleRestoreOk() || staffUpdateOk() || staffEditUnpaidPresaleOk() || customerUpdateOk();
       allow delete: if isAdmin();
     }
 
@@ -363,7 +373,9 @@ service cloud.firestore {
         && getAfter(path('contacts', d.orderId)).data.phone == phone;
     }
     match /activePhones/{phone} {
-      allow read: if isStaff();
+      // 預購主管只能讀單筆(復原作廢預購單前檢查電話是否已有其他訂單)
+      allow get: if isStaff() || isPresaleMgr();
+      allow list: if isStaff();
       allow create: if phoneLockOk(phone);
       // 上一張訂單已結束或已不存在，才能被新訂單覆蓋
       allow update: if phoneLockOk(phone) && orderDone(resource.data.orderId);

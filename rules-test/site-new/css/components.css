@@ -4176,3 +4176,31 @@ body.is-viewer-open {
   letter-spacing: 0.08em;
   text-align: center;
 }
+
+/* ===== 攤位頁：逾時作廢的預購單(平常收合) ===== */
+.void-box {
+  padding: 0;
+}
+
+.void-box__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-min);
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+  font-weight: var(--weight-semibold);
+  list-style: none;
+}
+
+.void-box__head::-webkit-details-marker {
+  display: none;
+}
+
+.void-box__body {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.void-box .order-card {
+  border-style: dashed;
+}
